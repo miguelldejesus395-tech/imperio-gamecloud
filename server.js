@@ -1,0 +1,32 @@
+'use strict';
+const http=require('http'),crypto=require('crypto'),fs=require('fs'),path=require('path');
+const PORT=Number(process.env.PORT||8080), ROOT=path.resolve(__dirname,'..'), DB=path.join(ROOT,'data','users.json');
+const ADMIN_USER=(process.env.ADMIN_USER||'').trim().toLowerCase(),ADMIN_PASSWORD=process.env.ADMIN_PASSWORD||'';
+const sessions=new Map(),resetTokens=new Map(),attempts=new Map();
+fs.mkdirSync(path.dirname(DB),{recursive:true});let users={};try{users=JSON.parse(fs.readFileSync(DB,'utf8'))}catch(e){if(e.code!=='ENOENT')throw e}
+function save(){let tmp=DB+'.tmp';fs.writeFileSync(tmp,JSON.stringify(users,null,2),{mode:0o600});fs.renameSync(tmp,DB)}
+function digest(p,s){return crypto.scryptSync(p,s,64).toString('hex')};function verify(p,u){let a=Buffer.from(digest(p,u.salt),'hex'),b=Buffer.from(u.hash,'hex');return a.length===b.length&&crypto.timingSafeEqual(a,b)}
+function json(res,status,data){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY','Content-Security-Policy':"default-src 'self';script-src 'self';style-src 'self' 'unsafe-inline';base-uri 'none';frame-ancestors 'none'"});res.end(JSON.stringify(data))}
+function read(req){return new Promise((resolve,reject)=>{let chunks=[],size=0;req.on('data',c=>{size+=c.length;if(size>32768){reject(new Error('Pedido muito grande'));req.destroy()}else chunks.push(c)});req.on('end',()=>{try{resolve(JSON.parse(Buffer.concat(chunks).toString()||'{}'))}catch(e){reject(e)}});req.on('error',reject)})}
+function session(req){let t=(req.headers.authorization||'').replace(/^Bearer /,'');let s=sessions.get(t);if(!s||s.exp<Date.now()){sessions.delete(t);return null}return s}
+function rate(ip){let r=attempts.get(ip)||{n:0,at:Date.now()};if(Date.now()-r.at>60000)r={n:0,at:Date.now()};r.n++;attempts.set(ip,r);return r.n>40}
+const server=http.createServer(async(req,res)=>{let pathname;try{pathname=new URL(req.url,'http://localhost').pathname}catch{return json(res,400,{error:'URL inválida'})}
+ if(req.method==='GET'&&pathname==='/'){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});return fs.createReadStream(path.join(ROOT,'frontend','index.html')).pipe(res)}
+ if(req.method==='GET'&&pathname==='/app.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store'});return fs.createReadStream(path.join(ROOT,'frontend','app.js')).pipe(res)}
+ if(req.method==='GET'&&pathname==='/api/health')return json(res,200,{ok:true,version:'4.0.0'});
+ if(!pathname.startsWith('/api/'))return json(res,404,{error:'Página não encontrada'});
+ let ip=req.socket.remoteAddress||'local';if(req.method==='POST'&&rate(ip))return json(res,429,{error:'Aguarde um minuto e tente novamente'});
+ try{let b=req.method==='POST'?await read(req):{},s=session(req),email=String(b.email||'').trim().toLowerCase();
+ if(pathname==='/api/users/register'&&req.method==='POST'){if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||String(b.password||'').length<8)return json(res,400,{error:'Informe e-mail válido e senha com 8 caracteres ou mais'});if(users[email]||email===ADMIN_USER)return json(res,409,{error:'E-mail já cadastrado'});let salt=crypto.randomBytes(16).toString('hex');users[email]={email,name:String(b.name||'Jogador').slice(0,60),salt,hash:digest(b.password,salt),minutes:0};save();return json(res,201,{ok:true})}
+ if(pathname==='/api/login'&&req.method==='POST'){let role,emailFound=email;if(ADMIN_USER&&ADMIN_PASSWORD&&email===ADMIN_USER&&crypto.timingSafeEqual(crypto.createHash('sha256').update(String(b.password||'')).digest(),crypto.createHash('sha256').update(ADMIN_PASSWORD).digest()))role='admin';else if(users[email]&&verify(String(b.password||''),users[email]))role='player';else return json(res,401,{error:'E-mail ou senha incorretos'});let token=crypto.randomBytes(32).toString('base64url');sessions.set(token,{role,email:emailFound,exp:Date.now()+(b.remember?30*86400000:8*3600000)});return json(res,200,{token,role,name:role==='admin'?'Administrador':users[email].name})}
+ if(pathname==='/api/me'&&req.method==='GET'){if(!s)return json(res,401,{error:'Entre na sua conta'});return json(res,200,{role:s.role,email:s.email,name:s.role==='admin'?'Administrador':users[s.email]?.name||'Jogador',minutes:users[s.email]?.minutes||0})}
+ if(pathname==='/api/logout'&&req.method==='POST'){let token=(req.headers.authorization||'').replace(/^Bearer /,'');sessions.delete(token);return json(res,200,{ok:true})}
+ if(pathname==='/api/password/forgot'&&req.method==='POST'){if(users[email]){let token=crypto.randomBytes(24).toString('hex');resetTokens.set(token,{email,exp:Date.now()+15*60000});console.log('RECUPERAÇÃO LOCAL (configure e-mail antes de publicar): /?reset='+token)}return json(res,200,{message:'Se a conta existir, a recuperação foi solicitada. O envio por e-mail requer configuração adicional.'})}
+ if(pathname==='/api/password/reset'&&req.method==='POST'){let r=resetTokens.get(String(b.token||''));if(!r||r.exp<Date.now()||String(b.password||'').length<8)return json(res,400,{error:'Link inválido, expirado ou senha curta'});let u=users[r.email];u.salt=crypto.randomBytes(16).toString('hex');u.hash=digest(b.password,u.salt);save();resetTokens.delete(b.token);return json(res,200,{ok:true})}
+ if(pathname.startsWith('/api/admin/')){if(!s||s.role!=='admin')return json(res,403,{error:'Acesso exclusivo do administrador'});
+ if(pathname==='/api/admin/overview'&&req.method==='GET'){let online=new Set([...sessions.values()].filter(x=>x.role==='player'&&x.exp>Date.now()).map(x=>x.email));return json(res,200,{users:Object.keys(users).length,playersOnline:online.size,version:'4.0.0',players:Object.values(users).map(u=>({email:u.email,name:u.name,minutes:u.minutes,online:online.has(u.email)}))})}
+ if(pathname==='/api/admin/time/add'&&req.method==='POST'){let u=users[email],minutes=Number(b.minutes);if(!u)return json(res,404,{error:'Jogador não encontrado'});if(!Number.isSafeInteger(minutes)||minutes<=0||minutes>100000)return json(res,400,{error:'Informe de 1 a 100000 minutos'});u.minutes+=minutes;save();return json(res,200,{ok:true,minutes:u.minutes})}
+ }
+ return json(res,404,{error:'Função não disponível'});
+ }catch(e){console.error(e);return json(res,400,{error:'Não foi possível processar o pedido'})}
+});server.listen(PORT,()=>console.log('Império GameCloud: http://localhost:'+PORT));
