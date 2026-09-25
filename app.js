@@ -176,7 +176,10 @@ async function load() {
         'Jogador'
       );
 
-      setText('userEmail', result.user.email || '');
+      setText(
+        'userEmail',
+        result.user.email || ''
+      );
 
       setText(
         'minutes',
@@ -207,12 +210,16 @@ async function loadAdmin() {
 
     setText(
       'totalPlayers',
-      result.totalPlayers ?? result.players ?? 0
+      result.totalPlayers ??
+      result.playersCount ??
+      0
     );
 
     setText(
       'onlinePlayers',
-      result.onlinePlayers ?? result.online ?? 0
+      result.onlinePlayers ??
+      result.online ??
+      0
     );
 
     if (Array.isArray(result.players)) {
@@ -312,8 +319,20 @@ document.addEventListener(
           event.preventDefault();
 
           try {
-            const email = el('loginEmail').value.trim();
-            const password = el('loginPassword').value;
+            const emailNode = el('loginEmail');
+            const passwordNode = el('loginPassword');
+
+            if (!emailNode || !passwordNode) {
+              throw new Error(
+                'Campos de login não encontrados.'
+              );
+            }
+
+            const email =
+              emailNode.value.trim();
+
+            const password =
+              passwordNode.value;
 
             const remember = el('remember')
               ? el('remember').checked
@@ -325,9 +344,10 @@ document.addEventListener(
               );
             }
 
-            const button = loginForm.querySelector(
-              'button[type="submit"]'
-            );
+            const button =
+              loginForm.querySelector(
+                'button[type="submit"]'
+              );
 
             if (button) {
               button.disabled = true;
@@ -353,9 +373,10 @@ document.addEventListener(
           } catch (error) {
             fail(error);
           } finally {
-            const button = loginForm.querySelector(
-              'button[type="submit"]'
-            );
+            const button =
+              loginForm.querySelector(
+                'button[type="submit"]'
+              );
 
             if (button) {
               button.disabled = false;
@@ -366,7 +387,8 @@ document.addEventListener(
       );
     }
 
-    const registerForm = el('registerForm');
+    const registerForm =
+      el('registerForm');
 
     if (registerForm) {
       registerForm.addEventListener(
@@ -375,9 +397,33 @@ document.addEventListener(
           event.preventDefault();
 
           try {
-            const name = el('registerName').value.trim();
-            const email = el('registerEmail').value.trim();
-            const password = el('registerPassword').value;
+            const nameNode =
+              el('registerName');
+
+            const emailNode =
+              el('registerEmail');
+
+            const passwordNode =
+              el('registerPassword');
+
+            if (
+              !nameNode ||
+              !emailNode ||
+              !passwordNode
+            ) {
+              throw new Error(
+                'Campos de cadastro não encontrados.'
+              );
+            }
+
+            const name =
+              nameNode.value.trim();
+
+            const email =
+              emailNode.value.trim();
+
+            const password =
+              passwordNode.value;
 
             if (!name || !email || !password) {
               throw new Error(
@@ -402,8 +448,11 @@ document.addEventListener(
 
             show('login');
 
-            if (el('loginEmail')) {
-              el('loginEmail').value = email;
+            const loginEmail =
+              el('loginEmail');
+
+            if (loginEmail) {
+              loginEmail.value = email;
             }
           } catch (error) {
             fail(error);
@@ -419,17 +468,26 @@ document.addEventListener(
         'click',
         async function () {
           try {
-            await api('logout', 'POST');
+            if (token) {
+              await api(
+                'logout',
+                'POST'
+              );
+            }
           } catch (_) {
           }
 
           clearSession();
           show('login');
+          message(
+            'Sessão encerrada.'
+          );
         }
       );
     }
 
-    const startStream = el('startStream');
+    const startStream =
+      el('startStream');
 
     if (startStream) {
       startStream.addEventListener(
@@ -437,6 +495,7 @@ document.addEventListener(
         async function () {
           try {
             startStream.disabled = true;
+
             startStream.textContent =
               '🟡 Iniciando...';
 
@@ -446,10 +505,16 @@ document.addEventListener(
             );
 
             await loadStreamStatus();
+            await loadPlayerStreamStatus();
+
+            message(
+              'FiveM iniciado.'
+            );
           } catch (error) {
             fail(error);
           } finally {
             startStream.disabled = false;
+
             startStream.textContent =
               '🎮 Iniciar FiveM';
           }
@@ -457,7 +522,209 @@ document.addEventListener(
       );
     }
 
-    const stopStream = el('stopStream');
+    const stopStream =
+      el('stopStream');
 
     if (stopStream) {
-     
+      stopStream.addEventListener(
+        'click',
+        async function () {
+          try {
+            stopStream.disabled = true;
+
+            stopStream.textContent =
+              '🟠 Encerrando...';
+
+            await api(
+              'stream/stop',
+              'POST'
+            );
+
+            await loadStreamStatus();
+            await loadPlayerStreamStatus();
+
+            message(
+              'FiveM encerrado.'
+            );
+          } catch (error) {
+            fail(error);
+          } finally {
+            stopStream.disabled = false;
+
+            stopStream.textContent =
+              '⛔ Encerrar FiveM';
+          }
+        }
+      );
+    }
+
+    const toggleStream =
+      el('toggleStream');
+
+    if (toggleStream) {
+      toggleStream.addEventListener(
+        'click',
+        async function () {
+          try {
+            toggleStream.disabled = true;
+
+            const result =
+              await api(
+                'stream/toggle',
+                'POST'
+              );
+
+            setText(
+              'streamStatus',
+              streamStatusText(
+                result.status
+              )
+            );
+
+            setText(
+              'streamMessage',
+              result.message || ''
+            );
+
+            toggleStream.textContent =
+              result.enabled
+                ? '🟢 Streaming ativado'
+                : '🔴 Streaming desativado';
+
+            await loadStreamStatus();
+          } catch (error) {
+            fail(error);
+          } finally {
+            toggleStream.disabled = false;
+          }
+        }
+      );
+    }
+
+    const refresh =
+      el('refresh');
+
+    if (refresh) {
+      refresh.addEventListener(
+        'click',
+        async function () {
+          refresh.disabled = true;
+
+          try {
+            await refreshAll();
+          } catch (error) {
+            fail(error);
+          } finally {
+            refresh.disabled = false;
+          }
+        }
+      );
+    }
+
+    const refreshAdmin =
+      el('refreshAdmin');
+
+    if (refreshAdmin) {
+      refreshAdmin.addEventListener(
+        'click',
+        async function () {
+          refreshAdmin.disabled = true;
+
+          try {
+            await loadAdmin();
+
+            if (role === 'admin') {
+              await loadStreamStatus();
+            }
+          } catch (error) {
+            fail(error);
+          } finally {
+            refreshAdmin.disabled = false;
+          }
+        }
+      );
+    }
+
+    const showRegister =
+      el('showRegister');
+
+    if (showRegister) {
+      showRegister.addEventListener(
+        'click',
+        function (event) {
+          event.preventDefault();
+          show('register');
+          message('');
+        }
+      );
+    }
+
+    const showLogin =
+      el('showLogin');
+
+    if (showLogin) {
+      showLogin.addEventListener(
+        'click',
+        function (event) {
+          event.preventDefault();
+          show('login');
+          message('');
+        }
+      );
+    }
+
+    const forgotPassword =
+      el('forgotPassword');
+
+    if (forgotPassword) {
+      forgotPassword.addEventListener(
+        'click',
+        async function (event) {
+          event.preventDefault();
+
+          try {
+            const emailNode =
+              el('loginEmail');
+
+            const email =
+              emailNode
+                ? emailNode.value.trim()
+                : '';
+
+            if (!email) {
+              throw new Error(
+                'Informe seu e-mail para recuperar a senha.'
+              );
+            }
+
+            await api(
+              'forgot-password',
+              'POST',
+              {
+                email: email
+              }
+            );
+
+            message(
+              'Se o e-mail estiver cadastrado, as instruções de recuperação foram enviadas.'
+            );
+          } catch (error) {
+            fail(error);
+          }
+        }
+      );
+    }
+
+    show(
+      token
+        ? role === 'admin'
+          ? 'admin'
+          : 'player'
+        : 'login'
+    );
+
+    if (token) {
+      load();
+    }
+  }
+);
