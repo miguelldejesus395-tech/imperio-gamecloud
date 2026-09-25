@@ -15,7 +15,9 @@ const el = id => document.getElementById(id);
 function show(page) {
   document
     .querySelectorAll('.page')
-    .forEach(p => p.classList.toggle('active', p.id === page));
+    .forEach(p =>
+      p.classList.toggle('active', p.id === page)
+    );
 
   message('');
 }
@@ -35,13 +37,19 @@ async function api(url, method = 'GET', data) {
 
     headers: {
       'Content-Type': 'application/json',
+
       ...(token
-        ? { Authorization: 'Bearer ' + token }
+        ? {
+            Authorization:
+              'Bearer ' + token
+          }
         : {})
     },
 
     ...(data
-      ? { body: JSON.stringify(data) }
+      ? {
+          body: JSON.stringify(data)
+        }
       : {})
   });
 
@@ -50,11 +58,16 @@ async function api(url, method = 'GET', data) {
   try {
     body = await response.json();
   } catch {
-    throw Error('Resposta inválida do servidor.');
+    throw Error(
+      'Resposta inválida do servidor.'
+    );
   }
 
   if (!response.ok) {
-    throw Error(body.error || 'Falha na conexão');
+    throw Error(
+      body.error ||
+      'Falha na conexão'
+    );
   }
 
   return body;
@@ -66,9 +79,15 @@ async function load() {
   role = me.role;
 
   if (role === 'admin') {
+
     show('admin');
+
     await loadAdmin();
+
+    await loadStreamStatus();
+
   } else {
+
     show('home');
 
     el('greeting').textContent =
@@ -76,31 +95,45 @@ async function load() {
 
     el('minutes').textContent =
       me.minutes + ' minutos';
+
+    await loadPlayerStreamStatus();
   }
 }
 
 async function loadAdmin() {
-  const data = await api('admin/overview');
+  const data =
+    await api('admin/overview');
 
-  el('users').textContent = data.users;
-  el('online').textContent = data.playersOnline;
+  el('users').textContent =
+    data.users;
 
-  const tbody = el('players');
+  el('online').textContent =
+    data.playersOnline;
+
+  const tbody =
+    el('players');
 
   tbody.replaceChildren();
 
   data.players.forEach(player => {
-    const tr = document.createElement('tr');
+
+    const tr =
+      document.createElement('tr');
 
     [
       player.name,
       player.email,
       String(player.minutes),
-      player.online ? 'Online' : 'Offline'
+      player.online
+        ? 'Online'
+        : 'Offline'
     ].forEach(value => {
-      const td = document.createElement('td');
 
-      td.textContent = value;
+      const td =
+        document.createElement('td');
+
+      td.textContent =
+        value;
 
       tr.append(td);
     });
@@ -109,7 +142,163 @@ async function loadAdmin() {
   });
 }
 
+function setStreamStatus(element, status) {
+
+  if (!element) {
+    return;
+  }
+
+  element.className = '';
+
+  if (status === 'online') {
+    element.classList.add('online');
+    element.textContent =
+      '🟢 ONLINE';
+    return;
+  }
+
+  if (status === 'starting') {
+    element.classList.add('starting');
+    element.textContent =
+      '🟡 INICIANDO';
+    return;
+  }
+
+  element.classList.add('offline');
+
+  element.textContent =
+    '⚪ OFFLINE';
+}
+
+function formatHeartbeat(value) {
+
+  if (!value) {
+    return 'Último contato: —';
+  }
+
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return 'Último contato: —';
+  }
+
+  return (
+    'Último contato: ' +
+    date.toLocaleString(
+      'pt-BR'
+    )
+  );
+}
+
+async function loadStreamStatus() {
+
+  try {
+
+    const data =
+      await api('stream/status');
+
+    setStreamStatus(
+      el('streamStatus'),
+      data.status
+    );
+
+    el('streamGame').textContent =
+      'Jogo: ' +
+      (data.game || 'FiveM');
+
+    el('streamHost').textContent =
+      'Computador: ' +
+      (data.host || '—');
+
+    el('streamMessage').textContent =
+      data.message || '—';
+
+    el('streamHeartbeat').textContent =
+      formatHeartbeat(
+        data.lastHeartbeat
+      );
+
+  } catch (error) {
+
+    if (el('streamStatus')) {
+
+      el('streamStatus').textContent =
+        'Erro ao consultar';
+
+      el('streamStatus').className =
+        'error';
+    }
+
+    console.error(
+      error
+    );
+  }
+}
+
+async function loadPlayerStreamStatus() {
+
+  try {
+
+    const data =
+      await api('stream/status');
+
+    setStreamStatus(
+      el('playerStreamStatus'),
+      data.status
+    );
+
+    el('playerStreamMessage').textContent =
+      data.message ||
+      'Nenhuma informação disponível.';
+
+  } catch (error) {
+
+    el('playerStreamStatus').textContent =
+      'Não foi possível verificar';
+
+    el('playerStreamStatus').className =
+      'error';
+
+    el('playerStreamMessage').textContent =
+      'Servidor GameCloud indisponível.';
+
+    console.error(
+      error
+    );
+  }
+}
+
+async function controlStream(
+  endpoint,
+  successMessage
+) {
+
+  try {
+
+    await api(
+      endpoint,
+      'POST'
+    );
+
+    message(
+      successMessage
+    );
+
+    await loadStreamStatus();
+
+  } catch (error) {
+
+    fail(error);
+  }
+}
+
 function fail(error) {
+
   message(
     error.message ||
       'Não foi possível conectar ao servidor. Verifique se ele está ligado.',
@@ -122,221 +311,354 @@ function fail(error) {
 document
   .querySelectorAll('[data-page]')
   .forEach(button => {
-    button.addEventListener('click', () => {
-      show(button.dataset.page);
-    });
+
+    button.addEventListener(
+      'click',
+      () => {
+        show(
+          button.dataset.page
+        );
+      }
+    );
   });
 
 /* Login */
 
-el('loginForm').addEventListener('submit', async event => {
-  event.preventDefault();
+el('loginForm')
+  .addEventListener(
+    'submit',
+    async event => {
 
-  try {
-    const remember =
-      el('remember').checked;
+      event.preventDefault();
 
-    const result = await api(
-      'login',
-      'POST',
-      {
-        email: el('email').value,
-        password: el('password').value,
-        remember
+      try {
+
+        const remember =
+          el('remember').checked;
+
+        const result =
+          await api(
+            'login',
+            'POST',
+            {
+              email:
+                el('email').value,
+
+              password:
+                el('password').value,
+
+              remember
+            }
+          );
+
+        token =
+          result.token;
+
+        localStorage.removeItem(
+          'igc_token'
+        );
+
+        sessionStorage.removeItem(
+          'igc_token'
+        );
+
+        (
+          remember
+            ? localStorage
+            : sessionStorage
+        ).setItem(
+          'igc_token',
+          token
+        );
+
+        el('password').value =
+          '';
+
+        await load();
+
+      } catch (error) {
+
+        fail(error);
       }
-    );
-
-    token = result.token;
-
-    localStorage.removeItem('igc_token');
-    sessionStorage.removeItem('igc_token');
-
-    (
-      remember
-        ? localStorage
-        : sessionStorage
-    ).setItem('igc_token', token);
-
-    el('password').value = '';
-
-    await load();
-
-  } catch (error) {
-    fail(error);
-  }
-});
+    }
+  );
 
 /* Cadastro */
 
-el('registerForm').addEventListener(
-  'submit',
-  async event => {
-    event.preventDefault();
+el('registerForm')
+  .addEventListener(
+    'submit',
+    async event => {
 
-    try {
-      await api(
-        'users/register',
-        'POST',
-        {
-          name: el('rname').value,
-          email: el('remail').value,
-          password: el('rpassword').value
-        }
-      );
+      event.preventDefault();
 
-      el('email').value =
-        el('remail').value;
+      try {
 
-      el('rpassword').value = '';
+        await api(
+          'users/register',
+          'POST',
+          {
+            name:
+              el('rname').value,
 
-      show('login');
+            email:
+              el('remail').value,
 
-      message(
-        'Conta criada! Entre com seu e-mail e senha.'
-      );
+            password:
+              el('rpassword').value
+          }
+        );
 
-    } catch (error) {
-      fail(error);
+        el('email').value =
+          el('remail').value;
+
+        el('rpassword').value =
+          '';
+
+        show('login');
+
+        message(
+          'Conta criada! Entre com seu e-mail e senha.'
+        );
+
+      } catch (error) {
+
+        fail(error);
+      }
     }
-  }
-);
+  );
 
 /* Recuperar senha */
 
-el('forgotForm').addEventListener(
-  'submit',
-  async event => {
-    event.preventDefault();
+el('forgotForm')
+  .addEventListener(
+    'submit',
+    async event => {
 
-    try {
-      const result = await api(
-        'password/forgot',
-        'POST',
-        {
-          email: el('femail').value
-        }
-      );
+      event.preventDefault();
 
-      message(result.message);
+      try {
 
-    } catch (error) {
-      fail(error);
+        const result =
+          await api(
+            'password/forgot',
+            'POST',
+            {
+              email:
+                el('femail').value
+            }
+          );
+
+        message(
+          result.message
+        );
+
+      } catch (error) {
+
+        fail(error);
+      }
     }
-  }
-);
+  );
 
 /* Alterar senha */
 
-el('resetForm').addEventListener(
-  'submit',
-  async event => {
-    event.preventDefault();
+el('resetForm')
+  .addEventListener(
+    'submit',
+    async event => {
 
-    try {
-      await api(
-        'password/reset',
-        'POST',
-        {
-          token:
-            new URLSearchParams(
-              location.search
-            ).get('reset'),
+      event.preventDefault();
 
-          password:
-            el('newpassword').value
-        }
-      );
+      try {
 
-      history.replaceState(
-        null,
-        '',
-        location.pathname
-      );
+        await api(
+          'password/reset',
+          'POST',
+          {
+            token:
+              new URLSearchParams(
+                location.search
+              ).get('reset'),
 
-      show('login');
+            password:
+              el('newpassword').value
+          }
+        );
 
-      message(
-        'Senha alterada. Entre novamente.'
-      );
+        history.replaceState(
+          null,
+          '',
+          location.pathname
+        );
 
-    } catch (error) {
-      fail(error);
+        show('login');
+
+        message(
+          'Senha alterada. Entre novamente.'
+        );
+
+      } catch (error) {
+
+        fail(error);
+      }
     }
-  }
-);
+  );
 
 /* Adicionar tempo */
 
-el('timeForm').addEventListener(
-  'submit',
-  async event => {
-    event.preventDefault();
+el('timeForm')
+  .addEventListener(
+    'submit',
+    async event => {
 
-    try {
-      const result = await api(
-        'admin/time/add',
-        'POST',
-        {
-          email:
-            el('playerEmail').value,
+      event.preventDefault();
 
-          minutes:
-            Number(
-              el('addMinutes').value
-            )
-        }
+      try {
+
+        const result =
+          await api(
+            'admin/time/add',
+            'POST',
+            {
+              email:
+                el('playerEmail').value,
+
+              minutes:
+                Number(
+                  el('addMinutes').value
+                )
+            }
+          );
+
+        await loadAdmin();
+
+        message(
+          'Tempo atualizado: ' +
+          result.minutes +
+          ' minutos.'
+        );
+
+      } catch (error) {
+
+        fail(error);
+      }
+    }
+  );
+
+/* Controle do GameCloud */
+
+el('startStream')
+  .addEventListener(
+    'click',
+    async () => {
+
+      await controlStream(
+        'admin/stream/start',
+        'Comando para iniciar o FiveM enviado ao GameCloud.'
       );
+    }
+  );
 
-      await loadAdmin();
+el('stopStream')
+  .addEventListener(
+    'click',
+    async () => {
+
+      await controlStream(
+        'admin/stream/stop',
+        'Comando para encerrar o FiveM enviado ao GameCloud.'
+      );
+    }
+  );
+
+el('toggleStream')
+  .addEventListener(
+    'click',
+    async () => {
+
+      await controlStream(
+        'admin/stream/toggle',
+        'Estado do streaming atualizado.'
+      );
+    }
+  );
+
+el('refreshStream')
+  .addEventListener(
+    'click',
+    async () => {
+
+      await loadStreamStatus();
 
       message(
-        'Tempo atualizado: ' +
-        result.minutes +
-        ' minutos.'
+        'Status do GameCloud atualizado.'
       );
-
-    } catch (error) {
-      fail(error);
     }
-  }
-);
+  );
 
 /* Atualizar jogador */
 
-el('refresh').addEventListener(
-  'click',
-  () => {
-    load().catch(fail);
-  }
-);
+el('refresh')
+  .addEventListener(
+    'click',
+    async () => {
+
+      try {
+
+        await load();
+
+        message(
+          'Dados atualizados.'
+        );
+
+      } catch (error) {
+
+        fail(error);
+      }
+    }
+  );
 
 /* Atualizar painel */
 
-el('refreshAdmin').addEventListener(
-  'click',
-  () => {
-    loadAdmin()
-      .then(() => {
-        message('Painel atualizado.');
-      })
-      .catch(fail);
-  }
-);
+el('refreshAdmin')
+  .addEventListener(
+    'click',
+    async () => {
+
+      try {
+
+        await loadAdmin();
+
+        await loadStreamStatus();
+
+        message(
+          'Painel atualizado.'
+        );
+
+      } catch (error) {
+
+        fail(error);
+      }
+    }
+  );
 
 /* Logout */
 
 document
   .querySelectorAll('.logout')
   .forEach(button => {
+
     button.addEventListener(
       'click',
       async () => {
 
         try {
+
           await api(
             'logout',
             'POST'
           );
+
         } catch {}
 
         token = '';
