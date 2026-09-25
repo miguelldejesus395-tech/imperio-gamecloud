@@ -18,22 +18,18 @@ function el(id) {
 }
 
 function show(page) {
-  document
-    .querySelectorAll('.page')
-    .forEach(function (p) {
-      p.classList.toggle('active', p.id === page);
-    });
-
-  message('');
+  document.querySelectorAll('.page').forEach(function (p) {
+    p.classList.toggle('active', p.id === page);
+  });
 }
 
 function message(text, error) {
-  const p = el('message');
+  const node = el('message');
 
-  if (!p) return;
+  if (!node) return;
 
-  p.textContent = text || '';
-  p.className = error ? 'error' : 'success';
+  node.textContent = text || '';
+  node.className = error ? 'error' : 'success';
 }
 
 function fail(error) {
@@ -52,19 +48,15 @@ async function api(url, method = 'GET', data = null) {
   };
 
   if (data !== null) {
-    options.headers['Content-Type'] =
-      'application/json';
-
+    options.headers['Content-Type'] = 'application/json';
     options.body = JSON.stringify(data);
   }
 
   if (token) {
-    options.headers.Authorization =
-      'Bearer ' + token;
+    options.headers.Authorization = 'Bearer ' + token;
   }
 
-  const response =
-    await fetch(API_BASE + url, options);
+  const response = await fetch(API_BASE + url, options);
 
   let result = {};
 
@@ -94,12 +86,12 @@ function saveSession(result, remember) {
 
   localStorage.removeItem('igc_token');
   localStorage.removeItem('igc_role');
-
   sessionStorage.removeItem('igc_token');
   sessionStorage.removeItem('igc_role');
 
-  const storage =
-    remember ? localStorage : sessionStorage;
+  const storage = remember
+    ? localStorage
+    : sessionStorage;
 
   if (token) {
     storage.setItem('igc_token', token);
@@ -116,7 +108,6 @@ function clearSession() {
 
   localStorage.removeItem('igc_token');
   localStorage.removeItem('igc_role');
-
   sessionStorage.removeItem('igc_token');
   sessionStorage.removeItem('igc_role');
 }
@@ -126,27 +117,16 @@ function setText(id, value) {
 
   if (node) {
     node.textContent =
-      value === undefined ||
-      value === null
+      value === undefined || value === null
         ? ''
         : String(value);
   }
 }
 
-function setVisible(id, visible) {
-  const node = el(id);
-
-  if (!node) return;
-
-  node.style.display =
-    visible ? '' : 'none';
-}
-
 function formatMinutes(minutes) {
-  const value =
-    Number.isFinite(Number(minutes))
-      ? Number(minutes)
-      : 0;
+  const value = Number.isFinite(Number(minutes))
+    ? Number(minutes)
+    : 0;
 
   return (
     value +
@@ -176,34 +156,18 @@ function streamStatusText(status) {
 
 async function load() {
   try {
-    const result =
-      await api('me');
+    const result = await api('me');
 
-    if (
-      result.user &&
-      result.user.role
-    ) {
+    if (result.user && result.user.role) {
       role = result.user.role;
 
-      if (
-        localStorage.getItem('igc_token')
-      ) {
-        localStorage.setItem(
-          'igc_role',
-          role
-        );
+      if (localStorage.getItem('igc_token')) {
+        localStorage.setItem('igc_role', role);
       } else {
-        sessionStorage.setItem(
-          'igc_role',
-          role
-        );
+        sessionStorage.setItem('igc_role', role);
       }
 
-      show(
-        role === 'admin'
-          ? 'admin'
-          : 'player'
-      );
+      show(role === 'admin' ? 'admin' : 'player');
 
       setText(
         'userName',
@@ -212,16 +176,11 @@ async function load() {
         'Jogador'
       );
 
-      setText(
-        'userEmail',
-        result.user.email || ''
-      );
+      setText('userEmail', result.user.email || '');
 
       setText(
         'minutes',
-        formatMinutes(
-          result.user.minutes || 0
-        )
+        formatMinutes(result.user.minutes || 0)
       );
 
       await loadPlayerStreamStatus();
@@ -242,53 +201,40 @@ async function load() {
 
 async function loadAdmin() {
   try {
-    const result =
-      await api('admin/overview');
+    const result = await api('admin/overview');
 
     if (!result) return;
 
     setText(
       'totalPlayers',
-      result.totalPlayers ??
-      result.players ??
-      0
+      result.totalPlayers ?? result.players ?? 0
     );
 
     setText(
       'onlinePlayers',
-      result.onlinePlayers ??
-      result.online ??
-      0
+      result.onlinePlayers ?? result.online ?? 0
     );
 
-    if (
-      Array.isArray(result.players)
-    ) {
+    if (Array.isArray(result.players)) {
       const list = el('playersList');
 
       if (list) {
         list.innerHTML = '';
 
-        result.players.forEach(
-          function (player) {
-            const item =
-              document.createElement('div');
+        result.players.forEach(function (player) {
+          const item = document.createElement('div');
 
-            item.className =
-              'player-item';
+          item.className = 'player-item';
 
-            item.textContent =
-              (player.name || '') +
-              ' — ' +
-              (player.email || '') +
-              ' — ' +
-              formatMinutes(
-                player.minutes || 0
-              );
+          item.textContent =
+            (player.name || '') +
+            ' — ' +
+            (player.email || '') +
+            ' — ' +
+            formatMinutes(player.minutes || 0);
 
-            list.appendChild(item);
-          }
-        );
+          list.appendChild(item);
+        });
       }
     }
   } catch (error) {
@@ -298,17 +244,11 @@ async function loadAdmin() {
 
 async function loadStreamStatus() {
   try {
-    const result =
-      await api('stream/status');
-
-    const text =
-      streamStatusText(
-        result.status
-      );
+    const result = await api('stream/status');
 
     setText(
       'streamStatus',
-      text
+      streamStatusText(result.status)
     );
 
     setText(
@@ -316,16 +256,14 @@ async function loadStreamStatus() {
       result.message || ''
     );
 
-    const toggle =
-      el('toggleStream');
+    const toggle = el('toggleStream');
 
     if (toggle) {
-      toggle.textContent =
-        result.enabled
-          ? '🟢 Streaming ativado'
-          : '🔴 Streaming desativado';
+      toggle.textContent = result.enabled
+        ? '🟢 Streaming ativado'
+        : '🔴 Streaming desativado';
     }
-  } catch (error) {
+  } catch (_) {
     setText(
       'streamStatus',
       '⚠️ Não foi possível consultar'
@@ -335,14 +273,11 @@ async function loadStreamStatus() {
 
 async function loadPlayerStreamStatus() {
   try {
-    const result =
-      await api('stream/status');
+    const result = await api('stream/status');
 
     setText(
       'playerStreamStatus',
-      streamStatusText(
-        result.status
-      )
+      streamStatusText(result.status)
     );
 
     setText(
@@ -368,9 +303,7 @@ async function refreshAll() {
 document.addEventListener(
   'DOMContentLoaded',
   function () {
-
-    const loginForm =
-      el('loginForm');
+    const loginForm = el('loginForm');
 
     if (loginForm) {
       loginForm.addEventListener(
@@ -379,16 +312,12 @@ document.addEventListener(
           event.preventDefault();
 
           try {
-            const email =
-              el('loginEmail').value.trim();
+            const email = el('loginEmail').value.trim();
+            const password = el('loginPassword').value;
 
-            const password =
-              el('loginPassword').value;
-
-            const remember =
-              el('remember')
-                ? el('remember').checked
-                : false;
+            const remember = el('remember')
+              ? el('remember').checked
+              : false;
 
             if (!email || !password) {
               throw new Error(
@@ -396,59 +325,48 @@ document.addEventListener(
               );
             }
 
-            const button =
-              loginForm.querySelector(
-                'button[type="submit"]'
-              );
+            const button = loginForm.querySelector(
+              'button[type="submit"]'
+            );
 
             if (button) {
               button.disabled = true;
-              button.textContent =
-                'Entrando...';
+              button.textContent = 'Entrando...';
             }
 
-            const result =
-              await api(
-                'login',
-                'POST',
-                {
-                  email: email,
-                  password: password
-                }
-              );
-
-            saveSession(
-              result,
-              remember
+            const result = await api(
+              'login',
+              'POST',
+              {
+                email: email,
+                password: password
+              }
             );
+
+            saveSession(result, remember);
 
             message(
               'Login realizado com sucesso!'
             );
 
             await load();
-
           } catch (error) {
             fail(error);
-
           } finally {
-            const button =
-              loginForm.querySelector(
-                'button[type="submit"]'
-              );
+            const button = loginForm.querySelector(
+              'button[type="submit"]'
+            );
 
             if (button) {
               button.disabled = false;
-              button.textContent =
-                'Entrar';
+              button.textContent = 'Entrar';
             }
           }
         }
       );
     }
 
-    const registerForm =
-      el('registerForm');
+    const registerForm = el('registerForm');
 
     if (registerForm) {
       registerForm.addEventListener(
@@ -457,27 +375,25 @@ document.addEventListener(
           event.preventDefault();
 
           try {
-            const name =
-              el('registerName').value.trim();
+            const name = el('registerName').value.trim();
+            const email = el('registerEmail').value.trim();
+            const password = el('registerPassword').value;
 
-            const email =
-              el('registerEmail')
-                .value.trim();
-
-            const password =
-              el('registerPassword')
-                .value;
-
-            const result =
-              await api(
-                'register',
-                'POST',
-                {
-                  name: name,
-                  email: email,
-                  password: password
-                }
+            if (!name || !email || !password) {
+              throw new Error(
+                'Preencha todos os campos.'
               );
+            }
+
+            const result = await api(
+              'register',
+              'POST',
+              {
+                name: name,
+                email: email,
+                password: password
+              }
+            );
 
             message(
               result.message ||
@@ -487,10 +403,8 @@ document.addEventListener(
             show('login');
 
             if (el('loginEmail')) {
-              el('loginEmail').value =
-                email;
+              el('loginEmail').value = email;
             }
-
           } catch (error) {
             fail(error);
           }
@@ -498,18 +412,14 @@ document.addEventListener(
       );
     }
 
-    const logout =
-      el('logout');
+    const logout = el('logout');
 
     if (logout) {
       logout.addEventListener(
         'click',
         async function () {
           try {
-            await api(
-              'logout',
-              'POST'
-            );
+            await api('logout', 'POST');
           } catch (_) {
           }
 
@@ -519,8 +429,7 @@ document.addEventListener(
       );
     }
 
-    const startStream =
-      el('startStream');
+    const startStream = el('startStream');
 
     if (startStream) {
       startStream.addEventListener(
@@ -537,14 +446,10 @@ document.addEventListener(
             );
 
             await loadStreamStatus();
-
           } catch (error) {
             fail(error);
-
           } finally {
-            startStream.disabled =
-              false;
-
+            startStream.disabled = false;
             startStream.textContent =
               '🎮 Iniciar FiveM';
           }
@@ -552,313 +457,7 @@ document.addEventListener(
       );
     }
 
-    const stopStream =
-      el('stopStream');
+    const stopStream = el('stopStream');
 
     if (stopStream) {
-      stopStream.addEventListener(
-        'click',
-        async function () {
-          try {
-            stopStream.disabled = true;
-            stopStream.textContent =
-              '🟠 Encerrando...';
-
-            await api(
-              'stream/stop',
-              'POST'
-            );
-
-            await loadStreamStatus();
-
-          } catch (error) {
-            fail(error);
-
-          } finally {
-            stopStream.disabled =
-              false;
-
-            stopStream.textContent =
-              '⛔ Parar FiveM';
-          }
-        }
-      );
-    }
-
-    const toggleStream =
-      el('toggleStream');
-
-    if (toggleStream) {
-      toggleStream.addEventListener(
-        'click',
-        async function () {
-          try {
-            const status =
-              await api(
-                'stream/status'
-              );
-
-            await api(
-              'stream/toggle',
-              'POST',
-              {
-                enabled:
-                  !status.enabled
-              }
-            );
-
-            await loadStreamStatus();
-
-          } catch (error) {
-            fail(error);
-          }
-        }
-      );
-    }
-
-    const refreshStream =
-      el('refreshStream');
-
-    if (refreshStream) {
-      refreshStream.addEventListener(
-        'click',
-        async function () {
-          await loadStreamStatus();
-        }
-      );
-    }
-
-    const playerStart =
-      el('playerStart');
-
-    if (playerStart) {
-      playerStart.addEventListener(
-        'click',
-        async function () {
-
-          try {
-            playerStart.disabled =
-              true;
-
-            playerStart.textContent =
-              '🟡 Solicitando FiveM...';
-
-            const result =
-              await api(
-                'stream/start',
-                'POST'
-              );
-
-            setText(
-              'minutes',
-              formatMinutes(
-                result.minutes || 0
-              )
-            );
-
-            message(
-              result.message ||
-              'FiveM solicitado com sucesso!'
-            );
-
-            await loadPlayerStreamStatus();
-
-          } catch (error) {
-
-            playerStart.disabled =
-              false;
-
-            playerStart.textContent =
-              '🎮 Iniciar FiveM';
-
-            fail(error);
-          }
-        }
-      );
-    }
-
-    const addTimeForm =
-      el('addTimeForm');
-
-    if (addTimeForm) {
-      addTimeForm.addEventListener(
-        'submit',
-        async function (event) {
-          event.preventDefault();
-
-          try {
-            const email =
-              el('addTimeEmail')
-                .value.trim();
-
-            const minutes =
-              Number(
-                el('addTimeMinutes')
-                  .value
-              );
-
-            if (!email) {
-              throw new Error(
-                'Informe o e-mail do jogador.'
-              );
-            }
-
-            if (
-              !Number.isFinite(minutes) ||
-              minutes <= 0
-            ) {
-              throw new Error(
-                'Informe uma quantidade válida de minutos.'
-              );
-            }
-
-            const result =
-              await api(
-                'admin/add-time',
-                'POST',
-                {
-                  email: email,
-                  minutes: minutes
-                }
-              );
-
-            message(
-              result.message ||
-              'Minutos adicionados!'
-            );
-
-            await loadAdmin();
-
-          } catch (error) {
-            fail(error);
-          }
-        }
-      );
-    }
-
-    const forgotForm =
-      el('forgotForm');
-
-    if (forgotForm) {
-      forgotForm.addEventListener(
-        'submit',
-        async function (event) {
-          event.preventDefault();
-
-          try {
-            const email =
-              el('forgotEmail')
-                .value.trim();
-
-            await api(
-              'forgot',
-              'POST',
-              {
-                email: email
-              }
-            );
-
-            message(
-              'Se a conta existir, a recuperação será processada.'
-            );
-
-          } catch (error) {
-            fail(error);
-          }
-        }
-      );
-    }
-
-    const resetForm =
-      el('resetForm');
-
-    if (resetForm) {
-      resetForm.addEventListener(
-        'submit',
-        async function (event) {
-          event.preventDefault();
-
-          try {
-            const tokenReset =
-              el('resetToken').value.trim();
-
-            const password =
-              el('resetPassword').value;
-
-            await api(
-              'reset',
-              'POST',
-              {
-                token: tokenReset,
-                password: password
-              }
-            );
-
-            message(
-              'Senha alterada com sucesso!'
-            );
-
-            show('login');
-
-          } catch (error) {
-            fail(error);
-          }
-        }
-      );
-    }
-
-    const goRegister =
-      el('goRegister');
-
-    if (goRegister) {
-      goRegister.addEventListener(
-        'click',
-        function () {
-          show('register');
-        }
-      );
-    }
-
-    const goLogin =
-      el('goLogin');
-
-    if (goLogin) {
-      goLogin.addEventListener(
-        'click',
-        function () {
-          show('login');
-        }
-      );
-    }
-
-    const goForgot =
-      el('goForgot');
-
-    if (goForgot) {
-      goForgot.addEventListener(
-        'click',
-        function () {
-          show('forgot');
-        }
-      );
-    }
-
-    const goReset =
-      el('goReset');
-
-    if (goReset) {
-      goReset.addEventListener(
-        'click',
-        function () {
-          show('reset');
-        }
-      );
-    }
-
-    show('login');
-
-    if (token) {
-      load();
-    }
-  }
-);
+     
