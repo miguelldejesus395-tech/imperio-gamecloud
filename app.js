@@ -92,7 +92,10 @@ async function api(path, method, data) {
 
 function saveSession(result, remember) {
   token = result.token || '';
-  role = result.role || '';
+
+  role = result.user
+    ? result.user.role || ''
+    : result.role || '';
 
   localStorage.removeItem('igc_token');
   localStorage.removeItem('igc_role');
@@ -285,12 +288,17 @@ async function loadAdmin() {
 
   setText(
     'users',
-    result.users || 0
+    result.users ||
+      result.totalPlayers ||
+      0
   );
 
   setText(
     'online',
-    result.playersOnline || 0
+    result.playersOnline ||
+      result.onlinePlayers ||
+      result.online ||
+      0
   );
 
   const tbody =
@@ -359,7 +367,13 @@ async function loadUser() {
   const result =
     await api('me');
 
-  role = result.role || '';
+  const user =
+    result.user || result;
+
+  role =
+    user.role ||
+    result.role ||
+    '';
 
   const storage =
     localStorage.getItem(
@@ -378,14 +392,16 @@ async function loadUser() {
   setText(
     'greeting',
     'Bem-vindo, ' +
-      (result.name || 'Jogador') +
+      (user.name ||
+        user.username ||
+        'Jogador') +
       '!'
   );
 
   setText(
     'minutes',
     formatMinutes(
-      result.minutes
+      user.minutes
     )
   );
 
@@ -438,12 +454,16 @@ async function startPlayerStream() {
         'POST'
       );
 
-    setText(
-      'minutes',
-      formatMinutes(
-        result.minutes
-      )
-    );
+    if (
+      result.minutes !== undefined
+    ) {
+      setText(
+        'minutes',
+        formatMinutes(
+          result.minutes
+        )
+      );
+    }
 
     await loadPlayerStreamStatus();
 
@@ -548,7 +568,8 @@ async function toggleAdminStream() {
         'admin/stream/toggle',
         'POST',
         {
-          enabled: !status.enabled
+          enabled:
+            !status.enabled
         }
       );
 
