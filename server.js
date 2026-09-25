@@ -6,17 +6,12 @@ const DB=path.join(ROOT,'data','users.json');
 
 const ADMIN_USER=(process.env.ADMIN_USER||'').trim().toLowerCase();
 const ADMIN_PASSWORD=process.env.ADMIN_PASSWORD||'';
-
-// Chave usada futuramente pelo agente instalado no PC do GameCloud.
-// Configure no Render antes de colocar o agente em produção.
 const STREAM_AGENT_KEY=process.env.STREAM_AGENT_KEY||'';
 
 const sessions=new Map();
 const resetTokens=new Map();
 const attempts=new Map();
 
-// Estado atual do servidor de streaming.
-// O Render mantém somente o estado; o agente no PC fará a execução real do FiveM.
 const streaming={
 enabled:true,
 status:'offline',
@@ -188,12 +183,6 @@ status:streaming.status
 });
 }
 
-/*
-STATUS PÚBLICO DO GAMECLOUD
-
-Este endpoint não inicia o FiveM.
-Ele apenas informa se o computador GameCloud está conectado.
-*/
 if(req.method==='GET'&&pathname==='/api/stream/status'){
 cleanupStreamingHeartbeat();
 
@@ -331,6 +320,68 @@ game:streaming.game
 }
 
 /* =========================
+INICIAR FIVEM PELO JOGADOR
+========================= */
+
+if(pathname==='/api/stream/start'&&req.method==='POST'){
+
+if(!s){
+return json(res,401,{
+error:'Entre na sua conta'
+});
+}
+
+if(s.role!=='player'){
+return json(res,403,{
+error:'Esta função é para jogadores'
+});
+}
+
+if(!streaming.enabled){
+return json(res,400,{
+error:'O streaming está desativado pelo administrador'
+});
+}
+
+const player=users[s.email];
+
+if(!player){
+return json(res,404,{
+error:'Jogador não encontrado'
+});
+}
+
+if(!Number.isSafeInteger(player.minutes)||player.minutes<=0){
+return json(res,400,{
+error:'Você não possui minutos disponíveis'
+});
+}
+
+if(
+streaming.status==='starting'||
+streaming.status==='online'
+){
+return json(res,409,{
+error:'O FiveM já está iniciado ou sendo iniciado'
+});
+}
+
+player.minutes-=1;
+save();
+
+streaming.status='starting';
+streaming.message=
+'Jogador '+player.name+' solicitou o início do FiveM';
+
+return json(res,200,{
+ok:true,
+status:streaming.status,
+minutes:player.minutes,
+message:'FiveM solicitado com sucesso'
+});
+}
+
+/* =========================
 LOGOUT
 ========================= */
 
@@ -409,8 +460,6 @@ error:'Acesso exclusivo do administrador'
 });
 }
 
-/* ---------- OVERVIEW ---------- */
-
 if(pathname==='/api/admin/overview'&&req.method==='GET'){
 
 const online=new Set(
@@ -444,8 +493,6 @@ online:online.has(u.email)
 });
 }
 
-/* ---------- ADICIONAR TEMPO ---------- */
-
 if(pathname==='/api/admin/time/add'&&req.method==='POST'){
 
 const u=users[email];
@@ -476,8 +523,6 @@ minutes:u.minutes
 });
 }
 
-/* ---------- ATIVAR/DESATIVAR STREAMING ---------- */
-
 if(pathname==='/api/admin/stream/toggle'&&req.method==='POST'){
 
 if(typeof b.enabled!=='boolean'){
@@ -503,8 +548,6 @@ message:streaming.message
 });
 }
 
-/* ---------- SOLICITAR INÍCIO DO FIVEM ---------- */
-
 if(pathname==='/api/admin/stream/start'&&req.method==='POST'){
 
 if(!streaming.enabled){
@@ -523,8 +566,6 @@ message:streaming.message
 });
 }
 
-/* ---------- SOLICITAR PARADA DO FIVEM ---------- */
-
 if(pathname==='/api/admin/stream/stop'&&req.method==='POST'){
 
 streaming.status='stopping';
@@ -542,17 +583,6 @@ message:streaming.message
 /* =========================
 AGENTE DO PC GAMECLOUD
 ========================= */
-
-/*
-O agente do PC usará estes endpoints.
-
-O segredo NÃO deve ser colocado no código.
-Ele será configurado no Render como:
-STREAM_AGENT_KEY=uma_chave_secreta
-
-O agente enviará:
-X-Stream-Agent-Key: <chave>
-*/
 
 if(pathname==='/api/agent/heartbeat'&&req.method==='POST'){
 
@@ -586,8 +616,6 @@ game:streaming.game
 });
 }
 
-/* ---------- AGENTE CONSULTA COMANDO ---------- */
-
 if(pathname==='/api/agent/command'&&req.method==='GET'){
 
 if(!agentAuthorized(req)){
@@ -611,8 +639,6 @@ command
 });
 }
 
-/* ---------- AGENTE CONFIRMA EXECUÇÃO ---------- */
-
 if(pathname==='/api/agent/status'&&req.method==='POST'){
 
 if(!agentAuthorized(req)){
@@ -635,16 +661,12 @@ if(b.host){
 streaming.host=String(b.host).slice(0,100);
 }
 
-/*
-Quando o agente informar que terminou uma ação,
-limpamos o comando pendente.
-*/
-
 if(
 streaming.status==='online'||
 streaming.status==='offline'||
 streaming.status==='error'
 ){
+
 if(streaming.status==='online'){
 streaming.message='FiveM disponível no PC GameCloud';
 }
@@ -660,10 +682,6 @@ status:streaming.status,
 message:streaming.message
 });
 }
-
-/* =========================
-ROTA NÃO ENCONTRADA
-========================= */
 
 return json(res,404,{
 error:'Função não disponível'
