@@ -87,6 +87,7 @@ async function api(url, method = 'GET', data = null) {
 
 function saveSession(result, remember) {
   token = result.token || '';
+
   role = result.user
     ? result.user.role
     : result.role || '';
@@ -147,8 +148,11 @@ function formatMinutes(minutes) {
       ? Number(minutes)
       : 0;
 
-  return value + ' minuto' +
-    (value === 1 ? '' : 's');
+  return (
+    value +
+    ' minuto' +
+    (value === 1 ? '' : 's')
+  );
 }
 
 function streamStatusText(status) {
