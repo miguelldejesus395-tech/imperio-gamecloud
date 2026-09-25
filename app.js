@@ -34,6 +34,7 @@ function message(text, isError) {
   }
 
   node.textContent = text || '';
+
   node.className = isError
     ? 'error'
     : 'success';
@@ -58,7 +59,8 @@ async function api(path, method, data) {
     options.headers['Content-Type'] =
       'application/json';
 
-    options.body = JSON.stringify(data);
+    options.body =
+      JSON.stringify(data);
   }
 
   if (token) {
@@ -66,15 +68,17 @@ async function api(path, method, data) {
       'Bearer ' + token;
   }
 
-  const response = await fetch(
-    API_BASE + path,
-    options
-  );
+  const response =
+    await fetch(
+      API_BASE + path,
+      options
+    );
 
   let result = {};
 
   try {
-    result = await response.json();
+    result =
+      await response.json();
   } catch (error) {
     result = {};
   }
@@ -91,21 +95,34 @@ async function api(path, method, data) {
 }
 
 function saveSession(result, remember) {
-  token = result.token || '';
+  token =
+    result.token || '';
 
-  role = result.user
-    ? result.user.role || ''
-    : result.role || '';
+  role =
+    result.user
+      ? result.user.role || ''
+      : result.role || '';
 
-  localStorage.removeItem('igc_token');
-  localStorage.removeItem('igc_role');
+  localStorage.removeItem(
+    'igc_token'
+  );
 
-  sessionStorage.removeItem('igc_token');
-  sessionStorage.removeItem('igc_role');
+  localStorage.removeItem(
+    'igc_role'
+  );
 
-  const storage = remember
-    ? localStorage
-    : sessionStorage;
+  sessionStorage.removeItem(
+    'igc_token'
+  );
+
+  sessionStorage.removeItem(
+    'igc_role'
+  );
+
+  const storage =
+    remember
+      ? localStorage
+      : sessionStorage;
 
   if (token) {
     storage.setItem(
@@ -126,11 +143,21 @@ function clearSession() {
   token = '';
   role = '';
 
-  localStorage.removeItem('igc_token');
-  localStorage.removeItem('igc_role');
+  localStorage.removeItem(
+    'igc_token'
+  );
 
-  sessionStorage.removeItem('igc_token');
-  sessionStorage.removeItem('igc_role');
+  localStorage.removeItem(
+    'igc_role'
+  );
+
+  sessionStorage.removeItem(
+    'igc_token'
+  );
+
+  sessionStorage.removeItem(
+    'igc_role'
+  );
 }
 
 function setText(id, value) {
@@ -148,7 +175,8 @@ function setText(id, value) {
 }
 
 function formatMinutes(value) {
-  const minutes = Number(value);
+  const minutes =
+    Number(value);
 
   const safe =
     Number.isFinite(minutes)
@@ -156,9 +184,11 @@ function formatMinutes(value) {
       : 0;
 
   return safe +
-    (safe === 1
-      ? ' minuto'
-      : ' minutos');
+    (
+      safe === 1
+        ? ' minuto'
+        : ' minutos'
+    );
 }
 
 function streamStatusText(status) {
@@ -229,18 +259,25 @@ async function loadStreamStatus() {
   setText(
     'streamGame',
     'Jogo: ' +
-      (result.game || 'FiveM')
+      (
+        result.game ||
+        'FiveM'
+      )
   );
 
   setText(
     'streamHost',
     'Computador: ' +
-      (result.host || '—')
+      (
+        result.host ||
+        '—'
+      )
   );
 
   setText(
     'streamMessage',
-    result.message || '—'
+    result.message ||
+      '—'
   );
 
   setText(
@@ -249,7 +286,9 @@ async function loadStreamStatus() {
       ? 'Último contato: ' +
         new Date(
           result.lastHeartbeat
-        ).toLocaleString('pt-BR')
+        ).toLocaleString(
+          'pt-BR'
+        )
       : 'Último contato: —'
   );
 
@@ -282,23 +321,50 @@ async function loadPlayerStreamStatus() {
   );
 }
 
+/*
+ * CORRIGIDO:
+ * O servidor retorna "users", não "players".
+ */
 async function loadAdmin() {
   const result =
-    await api('admin/overview');
+    await api(
+      'admin/overview'
+    );
 
+  const users =
+    Array.isArray(result.users)
+      ? result.users
+      : [];
+
+  /*
+   * O servidor retorna a lista de usuários.
+   * Portanto, o total correto é users.length.
+   */
   setText(
     'users',
-    result.users ||
-      result.totalPlayers ||
-      0
+    users.length
+  );
+
+  /*
+   * O backend atual não envia "online"
+   * dentro de cada usuário.
+   *
+   * Para não mostrar informação falsa,
+   * usamos 0 até o backend passar esse dado.
+   */
+  let onlineCount = 0;
+
+  users.forEach(
+    function (player) {
+      if (player.online === true) {
+        onlineCount++;
+      }
+    }
   );
 
   setText(
     'online',
-    result.playersOnline ||
-      result.onlinePlayers ||
-      result.online ||
-      0
+    onlineCount
   );
 
   const tbody =
@@ -310,55 +376,80 @@ async function loadAdmin() {
 
   tbody.innerHTML = '';
 
-  const players =
-    Array.isArray(result.players)
-      ? result.players
-      : [];
-
-  players.forEach(
+  users.forEach(
     function (player) {
       const row =
-        document.createElement('tr');
+        document.createElement(
+          'tr'
+        );
 
       const name =
-        document.createElement('td');
+        document.createElement(
+          'td'
+        );
 
       const email =
-        document.createElement('td');
+        document.createElement(
+          'td'
+        );
 
       const minutes =
-        document.createElement('td');
+        document.createElement(
+          'td'
+        );
 
       const status =
-        document.createElement('td');
+        document.createElement(
+          'td'
+        );
 
       name.textContent =
-        player.name || 'Jogador';
+        player.name ||
+        'Jogador';
 
       email.textContent =
-        player.email || '—';
+        player.email ||
+        '—';
 
       minutes.textContent =
         formatMinutes(
           player.minutes
         );
 
+      /*
+       * O backend atual não envia online.
+       * Por isso o jogador aparece como offline
+       * até essa informação ser adicionada ao backend.
+       */
       status.textContent =
-        player.online
+        player.online === true
           ? '🟢 Online'
           : '⚫ Offline';
 
       status.className =
-        player.online
+        player.online === true
           ? 'online'
           : 'offline';
 
-      row.appendChild(name);
-      row.appendChild(email);
-      row.appendChild(minutes);
-      row.appendChild(status);
+      row.appendChild(
+        name
+      );
 
-      tbody.appendChild(row);
+      row.appendChild(
+        email
+      );
+
+      row.appendChild(
+        minutes
+      );
+
+      row.appendChild(
+        status
+      );
+
+      tbody.appendChild(
+        row
+      );
     }
   );
 }
@@ -368,7 +459,8 @@ async function loadUser() {
     await api('me');
 
   const user =
-    result.user || result;
+    result.user ||
+    result;
 
   role =
     user.role ||
@@ -392,9 +484,11 @@ async function loadUser() {
   setText(
     'greeting',
     'Bem-vindo, ' +
-      (user.name ||
+      (
+        user.name ||
         user.username ||
-        'Jogador') +
+        'Jogador'
+      ) +
       '!'
   );
 
@@ -409,6 +503,7 @@ async function loadUser() {
     show('admin');
 
     await loadAdmin();
+
     await loadStreamStatus();
   } else {
     show('home');
@@ -454,16 +549,11 @@ async function startPlayerStream() {
         'POST'
       );
 
-    if (
-      result.minutes !== undefined
-    ) {
-      setText(
-        'minutes',
-        formatMinutes(
-          result.minutes
-        )
-      );
-    }
+    /*
+     * O backend atual não retorna minutes
+     * nessa rota. O valor será atualizado
+     * quando o usuário recarregar os dados.
+     */
 
     await loadPlayerStreamStatus();
 
@@ -606,6 +696,7 @@ function setupNavigation() {
 
             if (page) {
               show(page);
+
               message('');
             }
           }
@@ -628,16 +719,24 @@ function setupLogin() {
       event.preventDefault();
 
       const email =
-        el('email').value.trim();
+        el('email')
+          .value
+          .trim();
 
       const password =
-        el('password').value;
+        el('password')
+          .value;
 
       const remember =
-        el('remember').checked;
+        el('remember')
+          ? el('remember').checked
+          : false;
 
       try {
-        if (!email || !password) {
+        if (
+          !email ||
+          !password
+        ) {
           throw new Error(
             'Informe o e-mail e a senha.'
           );
@@ -685,13 +784,18 @@ function setupRegister() {
       event.preventDefault();
 
       const name =
-        el('rname').value.trim();
+        el('rname')
+          .value
+          .trim();
 
       const email =
-        el('remail').value.trim();
+        el('remail')
+          .value
+          .trim();
 
       const password =
-        el('rpassword').value;
+        el('rpassword')
+          .value;
 
       try {
         if (
@@ -704,7 +808,9 @@ function setupRegister() {
           );
         }
 
-        if (password.length < 8) {
+        if (
+          password.length < 8
+        ) {
           throw new Error(
             'A senha precisa ter pelo menos 8 caracteres.'
           );
@@ -753,7 +859,9 @@ function setupForgot() {
       event.preventDefault();
 
       const email =
-        el('femail').value.trim();
+        el('femail')
+          .value
+          .trim();
 
       try {
         if (!email) {
@@ -762,9 +870,13 @@ function setupForgot() {
           );
         }
 
+        /*
+         * CORRIGIDO:
+         * server.js usa /api/forgot-password
+         */
         const result =
           await api(
-            'password/forgot',
+            'forgot-password',
             'POST',
             {
               email: email
@@ -814,18 +926,25 @@ async function setupReset() {
       event.preventDefault();
 
       const password =
-        el('newpassword').value;
+        el('newpassword')
+          .value;
 
       try {
-        if (password.length < 8) {
+        if (
+          password.length < 8
+        ) {
           throw new Error(
             'A nova senha precisa ter pelo menos 8 caracteres.'
           );
         }
 
+        /*
+         * CORRIGIDO:
+         * server.js usa /api/reset-password
+         */
         const result =
           await api(
-            'password/reset',
+            'reset-password',
             'POST',
             {
               token: resetToken,
@@ -929,6 +1048,7 @@ function setupAdmin() {
       async function () {
         try {
           await loadAdmin();
+
           await loadStreamStatus();
 
           message(
@@ -954,7 +1074,8 @@ function setupAdmin() {
 
         const minutes =
           Number(
-            el('addMinutes').value
+            el('addMinutes')
+              .value
           );
 
         try {
@@ -990,12 +1111,28 @@ function setupAdmin() {
 
           await loadAdmin();
 
+          /*
+           * CORRIGIDO:
+           * server.js retorna o usuário dentro
+           * de result.user, e não result.minutes.
+           */
+          const updatedMinutes =
+            result.user &&
+            result.user.minutes !== undefined
+              ? result.user.minutes
+              : null;
+
           message(
-            'Tempo atualizado. O jogador agora possui ' +
-              formatMinutes(
-                result.minutes
-              ) +
-              '.'
+            updatedMinutes !== null
+              ? 'Tempo atualizado. O jogador agora possui ' +
+                formatMinutes(
+                  updatedMinutes
+                ) +
+                '.'
+              : (
+                result.message ||
+                'Tempo do jogador atualizado com sucesso.'
+              )
           );
         } catch (error) {
           fail(error);
@@ -1007,10 +1144,15 @@ function setupAdmin() {
 
 async function init() {
   setupNavigation();
+
   setupLogin();
+
   setupRegister();
+
   setupForgot();
+
   setupPlayer();
+
   setupAdmin();
 
   document
