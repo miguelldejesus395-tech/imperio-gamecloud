@@ -114,6 +114,11 @@
       border: 0;
     }
 
+    button.danger {
+      background: #3a1820;
+      border-color: #713a44;
+    }
+
     button:disabled {
       opacity: .55;
       cursor: not-allowed;
@@ -214,6 +219,12 @@
 
     .offline {
       color: #afc0d0;
+      font-weight: 800;
+    }
+
+    .starting {
+      color: #eaff00;
+      font-weight: 800;
     }
 
     .table-wrap {
@@ -267,6 +278,29 @@
     .logout {
       border-color: #713a44;
       background: #2a1820;
+    }
+
+    .stream-status {
+      padding: 16px;
+      border-radius: 12px;
+      background: #081522;
+      border: 1px solid #294b64;
+      margin: 12px 0;
+    }
+
+    .stream-status strong {
+      font-size: 18px;
+    }
+
+    .stream-buttons {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .stream-buttons button {
+      flex: 1;
+      min-width: 150px;
     }
 
     @media (max-width: 600px) {
@@ -485,16 +519,31 @@
 
         <h2>🎮 FiveM na nuvem</h2>
 
+        <div class="stream-status">
+
+          <strong>Status do GameCloud:</strong>
+
+          <div id="playerStreamStatus" class="offline">
+            Verificando...
+          </div>
+
+          <p id="playerStreamMessage" class="muted">
+            Aguarde enquanto verificamos o computador GameCloud.
+          </p>
+
+        </div>
+
         <p class="muted">
-          Seu acesso ao FiveM aparecerá aqui quando o sistema
-          de streaming estiver configurado.
+          O streaming do FiveM é realizado pelo computador GameCloud.
         </p>
 
         <button
+          id="playerStart"
+          class="primary"
           disabled
-          title="Streaming ainda não configurado"
+          title="O controle de início do jogador será ativado na próxima etapa"
         >
-          Iniciar FiveM — indisponível
+          🎮 Iniciar FiveM
         </button>
 
       </div>
@@ -518,7 +567,7 @@
           <h1>Painel administrativo</h1>
 
           <p class="muted">
-            Controle dos jogadores e do tempo disponível.
+            Controle dos jogadores, tempo e computador GameCloud.
           </p>
         </div>
 
@@ -542,11 +591,79 @@
 
         <div class="stat">
           ⚙️ Versão
-          <strong>4.0.0</strong>
+          <strong>4.1.0</strong>
         </div>
 
       </div>
 
+      <!-- CONTROLE GAMECLOUD -->
+      <div class="card">
+
+        <h2>🎮 Controle do FiveM</h2>
+
+        <p class="muted">
+          Controle o computador GameCloud e envie comandos para o agente.
+        </p>
+
+        <div class="stream-status">
+
+          <strong>Estado atual:</strong>
+
+          <div id="streamStatus" class="offline">
+            Verificando...
+          </div>
+
+          <p id="streamGame" class="muted">
+            Jogo: FiveM
+          </p>
+
+          <p id="streamHost" class="muted">
+            Computador: —
+          </p>
+
+          <p id="streamMessage" class="muted">
+            —
+          </p>
+
+          <p id="streamHeartbeat" class="muted">
+            Último contato: —
+          </p>
+
+        </div>
+
+        <div class="stream-buttons">
+
+          <button
+            id="startStream"
+            class="primary"
+          >
+            ▶️ Iniciar FiveM
+          </button>
+
+          <button
+            id="stopStream"
+            class="danger"
+          >
+            ⏹️ Encerrar FiveM
+          </button>
+
+          <button
+            id="toggleStream"
+          >
+            🔄 Ativar/Desativar
+          </button>
+
+          <button
+            id="refreshStream"
+          >
+            🔃 Atualizar status
+          </button>
+
+        </div>
+
+      </div>
+
+      <!-- TEMPO -->
       <div class="card">
 
         <h2>⏱️ Adicionar tempo</h2>
@@ -581,6 +698,7 @@
 
       </div>
 
+      <!-- JOGADORES -->
       <div class="card">
 
         <h2>👥 Jogadores</h2>
@@ -621,9 +739,15 @@
         <strong>ℹ️ Sistema atual</strong>
 
         <p>
-          Cadastro, login, sessões e controle de minutos estão ativos.
-          Streaming FiveM, pagamentos, envio automático de e-mails
-          e backups ainda precisam ser configurados.
+          Cadastro, login, sessões, controle de minutos,
+          agente GameCloud e controle administrativo do FiveM
+          estão ativos.
+        </p>
+
+        <p>
+          O streaming pelo navegador ainda depende da próxima etapa
+          de integração WebRTC. O acesso atual pelo PC pode ser feito
+          pelo Moonlight.
         </p>
 
       </div>
