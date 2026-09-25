@@ -25,6 +25,7 @@ return a.length===b.length&&crypto.timingSafeEqual(a,b)
 
 function json(res,status,data){
 res.writeHead(status,{
+'Access-Control-Allow-Origin':'*',
 'Content-Type':'application/json; charset=utf-8',
 'Cache-Control':'no-store',
 'X-Content-Type-Options':'nosniff',
@@ -73,10 +74,20 @@ return r.n>40
 
 const server=http.createServer(async(req,res)=>{
 let pathname;
+
 try{
 pathname=new URL(req.url,'http://localhost').pathname
 }catch{
 return json(res,400,{error:'URL inválida'})
+}
+
+if(req.method==='OPTIONS'){
+res.writeHead(204,{
+'Access-Control-Allow-Origin':'*',
+'Access-Control-Allow-Methods':'GET,POST,OPTIONS',
+'Access-Control-Allow-Headers':'Content-Type,Authorization'
+});
+return res.end()
 }
 
 if(req.method==='GET'&&pathname==='/'){
