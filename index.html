@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#03060d">
   <title>Império GameCloud</title>
 
   <style>
@@ -12,23 +13,29 @@
 
     body {
       margin: 0;
-      background: #03060d;
+      background:
+        radial-gradient(circle at top, #10233a 0, #03060d 42%);
       color: #edf4ff;
       font: 16px Arial, sans-serif;
+      min-height: 100vh;
     }
 
     .wrap {
-      max-width: 900px;
+      max-width: 1000px;
       margin: auto;
       padding: 20px 16px 90px;
     }
 
     header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
       padding: 18px;
-      background: #081322;
+      background: rgba(8, 19, 34, .96);
       border-bottom: 1px solid #28465b;
       font-weight: 900;
       font-size: 19px;
+      backdrop-filter: blur(8px);
     }
 
     header b,
@@ -37,11 +44,12 @@
     }
 
     .card {
-      background: #0b1928;
+      background: rgba(11, 25, 40, .94);
       border: 1px solid #24445e;
       border-radius: 16px;
       padding: 20px;
       margin: 14px 0;
+      box-shadow: 0 10px 30px rgba(0,0,0,.18);
     }
 
     .auth {
@@ -57,6 +65,14 @@
       display: block;
     }
 
+    h1 {
+      margin-top: 0;
+    }
+
+    h2 {
+      margin-top: 0;
+    }
+
     input,
     button {
       font: inherit;
@@ -70,6 +86,12 @@
       border: 1px solid #31516b;
       background: #050e19;
       color: white;
+      outline: none;
+    }
+
+    input:not([type="checkbox"]):focus {
+      border-color: #eaff00;
+      box-shadow: 0 0 0 2px rgba(234,255,0,.12);
     }
 
     button {
@@ -77,6 +99,12 @@
       background: #142b41;
       color: white;
       cursor: pointer;
+      transition: .15s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      border-color: #5f829d;
     }
 
     button.primary {
@@ -89,6 +117,7 @@
     button:disabled {
       opacity: .55;
       cursor: not-allowed;
+      transform: none;
     }
 
     .wide {
@@ -115,28 +144,37 @@
       color: #74f3a2;
     }
 
+    #message {
+      min-height: 22px;
+      font-weight: 700;
+    }
+
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
     }
 
     .stat {
-      background: #10283b;
-      padding: 18px;
-      border-radius: 12px;
+      background: linear-gradient(145deg, #10283b, #0b1b2c);
+      border: 1px solid #294b64;
+      padding: 20px;
+      border-radius: 14px;
     }
 
     .stat strong {
       display: block;
-      font-size: 27px;
-      margin-top: 8px;
+      font-size: 30px;
+      margin-top: 9px;
+      color: #eaff00;
     }
 
     .notice {
       border-left: 4px solid #eaff00;
       padding: 14px;
       background: #202817;
+      border-radius: 8px;
+      margin: 14px 0;
     }
 
     .nav {
@@ -150,85 +188,228 @@
       cursor: pointer;
     }
 
-    #message {
-      min-height: 22px;
+    .admin-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .admin-badge {
+      display: inline-block;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: #202817;
+      border: 1px solid #65720e;
+      color: #eaff00;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .online {
+      color: #74f3a2;
+      font-weight: 800;
+    }
+
+    .offline {
+      color: #afc0d0;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid #294259;
+      border-radius: 12px;
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
+      min-width: 620px;
     }
 
     td,
     th {
       text-align: left;
       border-bottom: 1px solid #294259;
-      padding: 10px 5px;
+      padding: 12px 10px;
       word-break: break-word;
+    }
+
+    th {
+      background: #10283b;
+      color: #eaff00;
+      font-size: 14px;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .player-count {
+      color: #afc0d0;
+      font-size: 14px;
+      margin-top: -6px;
+    }
+
+    .hero {
+      padding: 24px;
+      border-radius: 18px;
+      background:
+        linear-gradient(135deg, rgba(234,255,0,.08), rgba(11,25,40,.95));
+      border: 1px solid #31516b;
+    }
+
+    .hero h1 {
+      margin-bottom: 8px;
+    }
+
+    .logout {
+      border-color: #713a44;
+      background: #2a1820;
+    }
+
+    @media (max-width: 600px) {
+      .wrap {
+        padding: 14px 10px 70px;
+      }
+
+      header {
+        padding: 15px;
+      }
+
+      .card {
+        padding: 16px;
+      }
+
+      .stat strong {
+        font-size: 26px;
+      }
     }
   </style>
 </head>
 
 <body>
-  <header>👑 IMPÉRIO <b>GAMECLOUD</b></header>
+
+  <header>
+    👑 IMPÉRIO <b>GAMECLOUD</b>
+  </header>
 
   <main class="wrap">
+
     <p id="message" role="status" aria-live="polite"></p>
 
+    <!-- LOGIN -->
+
     <section id="login" class="page active">
+
       <div class="card auth">
+
         <h1>Entrar</h1>
 
         <form id="loginForm">
-          <input id="email" type="email" autocomplete="username"
-                 placeholder="Seu e-mail" required>
 
-          <input id="password" type="password"
-                 autocomplete="current-password"
-                 placeholder="Sua senha" required>
+          <input
+            id="email"
+            type="email"
+            autocomplete="username"
+            placeholder="Seu e-mail"
+            required
+          >
+
+          <input
+            id="password"
+            type="password"
+            autocomplete="current-password"
+            placeholder="Sua senha"
+            required
+          >
 
           <label class="row">
-            <input id="remember" type="checkbox" checked>
+            <input
+              id="remember"
+              type="checkbox"
+              checked
+            >
             Manter conectado neste aparelho
           </label>
 
-          <button class="primary wide">Entrar</button>
+          <button class="primary wide">
+            Entrar
+          </button>
+
         </form>
 
-        <button class="wide" data-page="register">Criar conta</button>
-        <button class="wide" data-page="forgot">Esqueci minha senha</button>
+        <button class="wide" data-page="register">
+          Criar conta
+        </button>
+
+        <button class="wide" data-page="forgot">
+          Esqueci minha senha
+        </button>
 
         <p class="muted">
           A senha não é salva pelo site. O navegador pode oferecer salvá-la com segurança.
         </p>
+
       </div>
+
     </section>
 
+    <!-- CADASTRO -->
+
     <section id="register" class="page">
+
       <div class="card auth">
+
         <h2>Criar conta</h2>
 
         <form id="registerForm">
-          <input id="rname" placeholder="Nome" maxlength="60" required>
 
-          <input id="remail" type="email"
-                 autocomplete="email"
-                 placeholder="E-mail" required>
+          <input
+            id="rname"
+            placeholder="Nome"
+            maxlength="60"
+            required
+          >
 
-          <input id="rpassword" type="password"
-                 autocomplete="new-password"
-                 minlength="8"
-                 placeholder="Senha (mínimo 8 caracteres)" required>
+          <input
+            id="remail"
+            type="email"
+            autocomplete="email"
+            placeholder="E-mail"
+            required
+          >
 
-          <button class="primary wide">Cadastrar</button>
+          <input
+            id="rpassword"
+            type="password"
+            autocomplete="new-password"
+            minlength="8"
+            placeholder="Senha (mínimo 8 caracteres)"
+            required
+          >
+
+          <button class="primary wide">
+            Cadastrar
+          </button>
+
         </form>
 
-        <button class="wide" data-page="login">Voltar</button>
+        <button class="wide" data-page="login">
+          Voltar
+        </button>
+
       </div>
+
     </section>
 
+    <!-- RECUPERAÇÃO -->
+
     <section id="forgot" class="page">
+
       <div class="card auth">
+
         <h2>Recuperar senha</h2>
 
         <p class="muted">
@@ -236,58 +417,91 @@
         </p>
 
         <form id="forgotForm">
-          <input id="femail" type="email"
-                 placeholder="E-mail" required>
+
+          <input
+            id="femail"
+            type="email"
+            placeholder="E-mail"
+            required
+          >
 
           <button class="primary wide">
             Solicitar recuperação
           </button>
+
         </form>
 
-        <button class="wide" data-page="login">Voltar</button>
+        <button class="wide" data-page="login">
+          Voltar
+        </button>
+
       </div>
+
     </section>
 
+    <!-- RESET -->
+
     <section id="reset" class="page">
+
       <div class="card auth">
+
         <h2>Definir nova senha</h2>
 
         <form id="resetForm">
-          <input id="newpassword"
-                 type="password"
-                 minlength="8"
-                 placeholder="Nova senha"
-                 required>
+
+          <input
+            id="newpassword"
+            type="password"
+            minlength="8"
+            placeholder="Nova senha"
+            required
+          >
 
           <button class="primary wide">
             Alterar senha
           </button>
+
         </form>
+
       </div>
+
     </section>
 
+    <!-- ÁREA DO JOGADOR -->
+
     <section id="home" class="page">
-      <div class="card">
-        <h1 id="greeting">Bem-vindo!</h1>
+
+      <div class="hero">
+
+        <h1 id="greeting">
+          Bem-vindo!
+        </h1>
 
         <p>
-          Tempo disponível:
-          <strong class="accent" id="minutes">0 minutos</strong>
+          Seu tempo disponível:
+          <strong class="accent" id="minutes">
+            0 minutos
+          </strong>
         </p>
 
-        <div class="notice">
-          <h3>🎮 FiveM na nuvem</h3>
+      </div>
 
-          <p>
-            O streaming de jogos ainda não está conectado.
-            Para jogar, é necessário configurar uma máquina com FiveM
-            e transmissão segura de vídeo.
-          </p>
+      <div class="card">
 
-          <button disabled title="Streaming ainda não configurado">
-            Iniciar FiveM — indisponível
-          </button>
-        </div>
+        <h2>🎮 FiveM na nuvem</h2>
+
+        <p class="muted">
+          Seu acesso ao FiveM aparecerá aqui quando o sistema
+          de streaming estiver configurado.
+        </p>
+
+        <button
+          disabled
+          title="Streaming ainda não configurado"
+        >
+          Iniciar FiveM — indisponível
+        </button>
+
       </div>
 
       <button id="refresh" class="primary">
@@ -297,86 +511,148 @@
       <button class="logout">
         Sair da conta
       </button>
+
     </section>
 
+    <!-- PAINEL ADMIN -->
+
     <section id="admin" class="page">
-      <h1>Painel administrativo</h1>
+
+      <div class="admin-title">
+
+        <div>
+          <h1>Painel administrativo</h1>
+
+          <p class="muted">
+            Controle dos jogadores e do tempo disponível.
+          </p>
+        </div>
+
+        <span class="admin-badge">
+          👑 ADMINISTRADOR
+        </span>
+
+      </div>
+
+      <!-- ESTATÍSTICAS -->
 
       <div class="grid">
+
         <div class="stat">
-          Jogadores cadastrados
+          👥 Jogadores cadastrados
           <strong id="users">0</strong>
         </div>
 
         <div class="stat">
-          Jogadores conectados
+          🟢 Jogadores conectados
           <strong id="online">0</strong>
         </div>
 
         <div class="stat">
-          Versão
+          ⚙️ Versão
           <strong>4.0.0</strong>
         </div>
+
       </div>
 
+      <!-- ADICIONAR TEMPO -->
+
       <div class="card">
-        <h2>Adicionar tempo</h2>
+
+        <h2>⏱️ Adicionar tempo</h2>
+
+        <p class="muted">
+          Informe o e-mail do jogador e a quantidade de minutos.
+        </p>
 
         <form id="timeForm">
-          <input id="playerEmail"
-                 type="email"
-                 placeholder="E-mail do jogador"
-                 required>
 
-          <input id="addMinutes"
-                 type="number"
-                 min="1"
-                 max="100000"
-                 placeholder="Minutos"
-                 required>
+          <input
+            id="playerEmail"
+            type="email"
+            placeholder="E-mail do jogador"
+            required
+          >
+
+          <input
+            id="addMinutes"
+            type="number"
+            min="1"
+            max="100000"
+            placeholder="Quantidade de minutos"
+            required
+          >
 
           <button class="primary">
-            Adicionar minutos
+            ➕ Adicionar minutos
           </button>
+
         </form>
+
       </div>
 
-      <div class="card">
-        <h2>Jogadores</h2>
+      <!-- LISTA DE JOGADORES -->
 
-        <div style="overflow-x:auto">
+      <div class="card">
+
+        <h2>👥 Jogadores</h2>
+
+        <p class="player-count">
+          Lista atualizada pelo servidor.
+        </p>
+
+        <div class="table-wrap">
+
           <table>
+
             <thead>
+
               <tr>
                 <th>Nome</th>
                 <th>E-mail</th>
                 <th>Minutos</th>
                 <th>Status</th>
               </tr>
+
             </thead>
 
             <tbody id="players"></tbody>
+
           </table>
+
         </div>
 
         <button id="refreshAdmin">
-          Atualizar painel
+          🔄 Atualizar painel
         </button>
+
       </div>
 
       <div class="notice">
-        Atualizações automáticas, backups, pagamentos e streaming
-        não estão configurados. Nenhum botão simula essas operações.
+
+        <strong>ℹ️ Sistema atual</strong>
+
+        <p>
+          Cadastro, login, sessões e controle de minutos estão ativos.
+          Streaming FiveM, pagamentos, envio automático de e-mails
+          e backups ainda precisam ser configurados.
+        </p>
+
       </div>
 
       <div class="nav">
+
         <button class="logout">
-          Sair da conta
+          🚪 Sair da conta
         </button>
+
       </div>
+
     </section>
+
   </main>
 
   <script src="/app.js" defer></script>
+
 </body>
 </html>
