@@ -605,7 +605,7 @@ async function loadUser() {
     formatMinutes(user.minutes)
   );
 
-  show('home');
+  show('user');
 
   await loadPlayerStreamStatus();
 }
