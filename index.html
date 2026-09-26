@@ -818,7 +818,258 @@
       grid-template-columns: 1fr;
     }
   }
-  </style>
+  /* ===== VISUAL PREMIUM IMPÉRIO GAMECLOUD ===== */
+
+body {
+  background:
+    radial-gradient(circle at 15% 10%, rgba(255, 220, 40, 0.10), transparent 28%),
+    radial-gradient(circle at 90% 15%, rgba(0, 190, 255, 0.10), transparent 30%),
+    linear-gradient(145deg, #02060b 0%, #06111d 48%, #02050a 100%);
+}
+
+.topbar {
+  background:
+    linear-gradient(90deg, #05080d, #0b1725, #05080d);
+  border-bottom: 1px solid rgba(255, 221, 40, 0.25);
+  box-shadow: 0 4px 25px rgba(0, 0, 0, 0.45);
+}
+
+.brand {
+  color: #ffffff;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+}
+
+.brand span {
+  color: #ffdf00;
+}
+
+.brand small {
+  color: #8fa5ba;
+}
+
+.status-pill {
+  background: rgba(255, 221, 40, 0.08);
+  border: 1px solid rgba(255, 221, 40, 0.28);
+  color: #dce8f2;
+  box-shadow: 0 0 18px rgba(255, 221, 40, 0.06);
+}
+
+.user-shell {
+  gap: 18px;
+}
+
+.sidebar {
+  background:
+    linear-gradient(180deg, rgba(10, 25, 41, 0.98), rgba(3, 10, 18, 0.98));
+  border: 1px solid rgba(90, 130, 165, 0.25);
+  box-shadow:
+    0 15px 40px rgba(0, 0, 0, 0.45),
+    inset 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.side-user {
+  background:
+    linear-gradient(135deg, rgba(255, 221, 40, 0.10), rgba(0, 160, 255, 0.05));
+  border: 1px solid rgba(255, 221, 40, 0.12);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.side-user strong {
+  color: #ffffff;
+}
+
+.side-user small {
+  color: #8fa5ba;
+}
+
+.side-btn {
+  border: 1px solid transparent;
+  background: transparent;
+  color: #aebdca;
+  transition: 0.2s ease;
+}
+
+.side-btn:hover {
+  background: rgba(255, 221, 40, 0.07);
+  color: #ffffff;
+}
+
+.side-btn.active {
+  background:
+    linear-gradient(90deg, rgba(255, 221, 40, 0.18), rgba(255, 221, 40, 0.04));
+  border-color: rgba(255, 221, 40, 0.25);
+  color: #ffdf00;
+  box-shadow: inset 3px 0 #ffdf00;
+}
+
+.side-logout {
+  border: 1px solid rgba(255, 80, 80, 0.22);
+}
+
+.dashboard-head {
+  background:
+    radial-gradient(circle at 90% 0%, rgba(255, 221, 40, 0.12), transparent 32%),
+    linear-gradient(135deg, rgba(12, 31, 49, 0.95), rgba(5, 14, 24, 0.95));
+  border: 1px solid rgba(100, 145, 180, 0.18);
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.25);
+}
+
+.dashboard-head h1 {
+  color: #ffffff;
+  text-shadow: 0 2px 18px rgba(255, 255, 255, 0.08);
+}
+
+.balance {
+  background:
+    linear-gradient(135deg, rgba(255, 221, 40, 0.18), rgba(255, 221, 40, 0.04));
+  border: 1px solid rgba(255, 221, 40, 0.30);
+  border-radius: 16px;
+  padding: 16px 20px;
+  box-shadow: 0 0 25px rgba(255, 221, 40, 0.08);
+}
+
+.balance strong {
+  color: #ffdf00;
+  text-shadow: 0 0 18px rgba(255, 221, 40, 0.25);
+}
+
+.stats-grid .stat {
+  background:
+    linear-gradient(145deg, #0d2135, #07121f);
+  border: 1px solid rgba(90, 140, 180, 0.22);
+  border-radius: 16px;
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.28),
+    inset 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.stat-icon {
+  background: rgba(255, 221, 40, 0.08);
+  border: 1px solid rgba(255, 221, 40, 0.15);
+}
+
+.game-card {
+  background:
+    radial-gradient(circle at 85% 15%, rgba(255, 221, 40, 0.16), transparent 30%),
+    radial-gradient(circle at 10% 90%, rgba(0, 170, 255, 0.12), transparent 35%),
+    linear-gradient(145deg, #10283e, #06111e);
+  border: 1px solid rgba(255, 221, 40, 0.25);
+  border-radius: 20px;
+  box-shadow:
+    0 20px 55px rgba(0, 0, 0, 0.40),
+    0 0 30px rgba(255, 221, 40, 0.05);
+}
+
+.game-card h2 {
+  color: #ffffff;
+  font-size: 25px;
+}
+
+.game-icon {
+  font-size: 55px;
+  filter: drop-shadow(0 0 15px rgba(255, 221, 40, 0.35));
+}
+
+.stream-box {
+  background:
+    linear-gradient(135deg, rgba(0, 0, 0, 0.28), rgba(8, 25, 40, 0.65));
+  border: 1px solid rgba(120, 160, 190, 0.20);
+  border-radius: 14px;
+}
+
+.stream-title {
+  color: #ffffff;
+  font-weight: 900;
+}
+
+.game-actions .primary,
+.primary {
+  background:
+    linear-gradient(135deg, #fff000, #ffcf00);
+  color: #101010;
+  border: 1px solid #ffe600;
+  font-weight: 900;
+  box-shadow:
+    0 8px 22px rgba(255, 214, 0, 0.20),
+    inset 0 1px rgba(255, 255, 255, 0.45);
+}
+
+.game-actions .primary:hover,
+.primary:hover {
+  filter: brightness(1.08);
+  box-shadow:
+    0 10px 28px rgba(255, 214, 0, 0.32);
+}
+
+.server-grid {
+  gap: 16px;
+}
+
+.server-card {
+  background:
+    linear-gradient(145deg, #0d2135, #07121f);
+  border: 1px solid rgba(90, 145, 185, 0.22);
+  border-radius: 17px;
+  box-shadow: 0 14px 35px rgba(0, 0, 0, 0.30);
+  transition: 0.2s ease;
+}
+
+.server-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 221, 40, 0.30);
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.35),
+    0 0 22px rgba(255, 221, 40, 0.05);
+}
+
+.server-status {
+  color: #8dff8d;
+}
+
+.card {
+  background:
+    linear-gradient(145deg, rgba(12, 29, 46, 0.96), rgba(5, 13, 22, 0.96));
+  border: 1px solid rgba(90, 140, 180, 0.20);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+}
+
+.buy-card {
+  background:
+    radial-gradient(circle at top right, rgba(255, 221, 40, 0.13), transparent 35%),
+    linear-gradient(145deg, #10263c, #07121f);
+  border: 1px solid rgba(255, 221, 40, 0.20);
+  border-radius: 18px;
+  box-shadow: 0 15px 38px rgba(0, 0, 0, 0.30);
+}
+
+.buy-card .minutes-value {
+  color: #ffdf00;
+  text-shadow: 0 0 20px rgba(255, 221, 40, 0.20);
+}
+
+.profile-item,
+.setting-item {
+  background: rgba(11, 27, 43, 0.85);
+  border: 1px solid rgba(90, 140, 180, 0.18);
+}
+
+.support-box {
+  background:
+    radial-gradient(circle at top right, rgba(255, 221, 40, 0.10), transparent 35%),
+    linear-gradient(145deg, #0d2135, #06111e);
+  border: 1px solid rgba(255, 221, 40, 0.18);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.30);
+}
+
+.badge.green {
+  color: #9cff9c;
+  border-color: rgba(87, 255, 147, 0.30);
+  background: rgba(87, 255, 147, 0.08);
+}
 </head>
 
 <body>
