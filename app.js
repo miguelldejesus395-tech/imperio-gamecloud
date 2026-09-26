@@ -17,21 +17,38 @@ function el(id) {
   return document.getElementById(id);
 }
 
-function setText(id, value) {
-  const node = el(id);
-  if (!node) return;
-  node.textContent =
-    value === undefined || value === null ? '' : String(value);
-}
-
 function show(page) {
-  document.querySelectorAll('.page').forEach(function (section) {
-    section.classList.toggle('active', section.id === page);
+  const userPages = document.querySelectorAll('.user-page');
+  const userPanel = document.getElementById('user');
+
+  const isUserPage = Array.from(userPages).some(function (section) {
+    return section.id === page;
   });
 
-  document.querySelectorAll('.user-page').forEach(function (section) {
-    section.style.display = section.id === page ? 'block' : 'none';
-  });
+  if (isUserPage) {
+    document.querySelectorAll('.page').forEach(function (section) {
+      section.classList.toggle(
+        'active',
+        section.id === 'user'
+      );
+    });
+
+    userPages.forEach(function (section) {
+      section.style.display =
+        section.id === page ? 'block' : 'none';
+    });
+  } else {
+    document.querySelectorAll('.page').forEach(function (section) {
+      section.classList.toggle(
+        'active',
+        section.id === page
+      );
+    });
+
+    userPages.forEach(function (section) {
+      section.style.display = 'none';
+    });
+  }
 
   document.querySelectorAll('.side-btn').forEach(function (button) {
     button.classList.toggle(
@@ -39,6 +56,19 @@ function show(page) {
       button.getAttribute('data-page') === page
     );
   });
+
+  if (page === 'user' && userPanel) {
+    userPanel.classList.add('active');
+
+    const homePage = document.getElementById('home');
+
+    if (homePage) {
+      userPages.forEach(function (section) {
+        section.style.display =
+          section.id === 'home' ? 'block' : 'none';
+      });
+    }
+  }
 }
 
 function message(text, isError) {
