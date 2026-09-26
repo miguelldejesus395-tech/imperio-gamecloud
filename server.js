@@ -85,20 +85,10 @@ function json(res, status, data) {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(body),
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Stream-Agent-Key',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff'
-  });
-
-  res.end(body);
-}
-
-function text(res, status, body) {
-  res.writeHead(status, {
-    'Content-Type': 'text/plain; charset=utf-8',
-    'Content-Length': Buffer.byteLength(body),
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers':
+      'Content-Type, Authorization, X-Stream-Agent-Key',
+    'Access-Control-Allow-Methods':
+      'GET, POST, OPTIONS',
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff'
   });
@@ -183,6 +173,7 @@ function verifyPassword(password, user) {
 
   try {
     const expected = Buffer.from(user.hash, 'hex');
+
     const actual = Buffer.from(
       passwordDigest(password, user.salt),
       'hex'
@@ -192,7 +183,10 @@ function verifyPassword(password, user) {
       return false;
     }
 
-    return crypto.timingSafeEqual(expected, actual);
+    return crypto.timingSafeEqual(
+      expected,
+      actual
+    );
   } catch {
     return false;
   }
@@ -210,7 +204,10 @@ function safeEqual(a, b) {
     return true;
   }
 
-  return crypto.timingSafeEqual(first, second);
+  return crypto.timingSafeEqual(
+    first,
+    second
+  );
 }
 
 function createSession(type, email) {
@@ -234,7 +231,8 @@ function getSession(req) {
     return null;
   }
 
-  const token = authorization.slice(7).trim();
+  const token =
+    authorization.slice(7).trim();
 
   if (!token) {
     return null;
@@ -255,7 +253,8 @@ function requireSession(req, res) {
 }
 
 function requireAdmin(req, res) {
-  const session = requireSession(req, res);
+  const session =
+    requireSession(req, res);
 
   if (!session) {
     return null;
@@ -281,7 +280,9 @@ function agentAuthorized(req) {
 }
 
 function validEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+    email
+  );
 }
 
 function normalizeEmail(email) {
@@ -290,11 +291,18 @@ function normalizeEmail(email) {
     .toLowerCase();
 }
 
-function rateLimit(key, max = 10, windowMs = 60000) {
+function rateLimit(
+  key,
+  max = 10,
+  windowMs = 60000
+) {
   const now = Date.now();
   const current = attempts.get(key);
 
-  if (!current || now - current.startedAt > windowMs) {
+  if (
+    !current ||
+    now - current.startedAt > windowMs
+  ) {
     attempts.set(key, {
       startedAt: now,
       count: 1
@@ -317,33 +325,50 @@ function publicUser(user) {
 }
 
 function findUser(email) {
-  const normalized = normalizeEmail(email);
+  const normalized =
+    normalizeEmail(email);
 
   return users.find(
-    user => normalizeEmail(user.email) === normalized
+    user =>
+      normalizeEmail(user.email) ===
+      normalized
   );
 }
 
 function findUserIndex(email) {
-  const normalized = normalizeEmail(email);
+  const normalized =
+    normalizeEmail(email);
 
   return users.findIndex(
-    user => normalizeEmail(user.email) === normalized
+    user =>
+      normalizeEmail(user.email) ===
+      normalized
   );
 }
 
 function removeExpiredSessions() {
-  const maxAge = 7 * 24 * 60 * 60 * 1000;
+  const maxAge =
+    7 * 24 * 60 * 60 * 1000;
+
   const now = Date.now();
 
-  for (const [token, session] of sessions.entries()) {
-    if (now - session.createdAt > maxAge) {
+  for (
+    const [token, session]
+    of sessions.entries()
+  ) {
+    if (
+      now - session.createdAt >
+      maxAge
+    ) {
       sessions.delete(token);
     }
   }
 }
 
-setInterval(removeExpiredSessions, 60 * 60 * 1000).unref();
+setInterval(
+  removeExpiredSessions,
+  60 * 60 * 1000
+).unref();
 
 async function handle(req, res) {
   if (req.method === 'OPTIONS') {
@@ -351,7 +376,8 @@ async function handle(req, res) {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Headers':
         'Content-Type, Authorization, X-Stream-Agent-Key',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
+      'Access-Control-Allow-Methods':
+        'GET, POST, OPTIONS'
     });
 
     res.end();
@@ -369,7 +395,10 @@ async function handle(req, res) {
    * HEALTH
    */
 
-  if (req.method === 'GET' && pathname === '/api/health') {
+  if (
+    req.method === 'GET' &&
+    pathname === '/api/health'
+  ) {
     json(res, 200, {
       ok: true,
       version: '4.1.0',
@@ -397,7 +426,8 @@ async function handle(req, res) {
         status: streaming.status,
         game: streaming.game,
         host: streaming.host,
-        lastHeartbeat: streaming.lastHeartbeat,
+        lastHeartbeat:
+          streaming.lastHeartbeat,
         message: streaming.message
       }
     });
@@ -413,23 +443,38 @@ async function handle(req, res) {
     req.method === 'POST' &&
     pathname === '/api/users/register'
   ) {
-    const ip = req.socket.remoteAddress || 'unknown';
+    const ip =
+      req.socket.remoteAddress ||
+      'unknown';
 
-    if (!rateLimit(`register:${ip}`, 10, 60000)) {
+    if (
+      !rateLimit(
+        `register:${ip}`,
+        10,
+        60000
+      )
+    ) {
       json(res, 429, {
         ok: false,
-        error: 'Muitas tentativas. Aguarde um pouco.'
+        error:
+          'Muitas tentativas. Aguarde um pouco.'
       });
 
       return;
     }
 
     try {
-      const body = await readBody(req);
+      const body =
+        await readBody(req);
 
-      const email = normalizeEmail(body.email);
-      const name = String(body.name || '').trim();
-      const password = String(body.password || '');
+      const email =
+        normalizeEmail(body.email);
+
+      const name =
+        String(body.name || '').trim();
+
+      const password =
+        String(body.password || '');
 
       if (!validEmail(email)) {
         json(res, 400, {
@@ -452,7 +497,8 @@ async function handle(req, res) {
       if (password.length < 8) {
         json(res, 400, {
           ok: false,
-          error: 'A senha deve ter pelo menos 8 caracteres.'
+          error:
+            'A senha deve ter pelo menos 8 caracteres.'
         });
 
         return;
@@ -464,7 +510,8 @@ async function handle(req, res) {
       ) {
         json(res, 409, {
           ok: false,
-          error: 'Este e-mail é reservado para o administrador.'
+          error:
+            'Este e-mail é reservado para o administrador.'
         });
 
         return;
@@ -473,13 +520,15 @@ async function handle(req, res) {
       if (findUser(email)) {
         json(res, 409, {
           ok: false,
-          error: 'Este e-mail já está cadastrado.'
+          error:
+            'Este e-mail já está cadastrado.'
         });
 
         return;
       }
 
-      const credentials = hashPassword(password);
+      const credentials =
+        hashPassword(password);
 
       const user = {
         email,
@@ -487,23 +536,31 @@ async function handle(req, res) {
         salt: credentials.salt,
         hash: credentials.hash,
         minutes: 0,
-        createdAt: new Date().toISOString()
+        createdAt:
+          new Date().toISOString()
       };
 
       users.push(user);
+
       saveUsers();
 
-      console.log(`Novo jogador cadastrado: ${email}`);
+      console.log(
+        `Novo jogador cadastrado: ${email}`
+      );
 
       json(res, 201, {
         ok: true,
-        message: 'Cadastro realizado com sucesso.',
+        message:
+          'Cadastro realizado com sucesso.',
         user: publicUser(user)
       });
 
       return;
     } catch (error) {
-      console.error('Erro no cadastro:', error);
+      console.error(
+        'Erro no cadastro:',
+        error
+      );
 
       json(res, 400, {
         ok: false,
@@ -522,22 +579,35 @@ async function handle(req, res) {
     req.method === 'POST' &&
     pathname === '/api/login'
   ) {
-    const ip = req.socket.remoteAddress || 'unknown';
+    const ip =
+      req.socket.remoteAddress ||
+      'unknown';
 
-    if (!rateLimit(`login:${ip}`, 20, 60000)) {
+    if (
+      !rateLimit(
+        `login:${ip}`,
+        20,
+        60000
+      )
+    ) {
       json(res, 429, {
         ok: false,
-        error: 'Muitas tentativas. Aguarde um pouco.'
+        error:
+          'Muitas tentativas. Aguarde um pouco.'
       });
 
       return;
     }
 
     try {
-      const body = await readBody(req);
+      const body =
+        await readBody(req);
 
-      const email = normalizeEmail(body.email);
-      const password = String(body.password || '');
+      const email =
+        normalizeEmail(body.email);
+
+      const password =
+        String(body.password || '');
 
       /*
        * ADMIN
@@ -547,12 +617,16 @@ async function handle(req, res) {
         ADMIN_USER &&
         email === ADMIN_USER &&
         ADMIN_PASSWORD &&
-        safeEqual(password, ADMIN_PASSWORD)
+        safeEqual(
+          password,
+          ADMIN_PASSWORD
+        )
       ) {
-        const token = createSession(
-          'admin',
-          ADMIN_USER
-        );
+        const token =
+          createSession(
+            'admin',
+            ADMIN_USER
+          );
 
         json(res, 200, {
           ok: true,
@@ -571,26 +645,34 @@ async function handle(req, res) {
        * PLAYER
        */
 
-      const user = findUser(email);
+      const user =
+        findUser(email);
 
       if (
         !user ||
-        !verifyPassword(password, user)
+        !verifyPassword(
+          password,
+          user
+        )
       ) {
-        console.log(`Falha de login: ${email}`);
+        console.log(
+          `Falha de login: ${email}`
+        );
 
         json(res, 401, {
           ok: false,
-          error: 'E-mail ou senha incorretos.'
+          error:
+            'E-mail ou senha incorretos.'
         });
 
         return;
       }
 
-      const token = createSession(
-        'player',
-        user.email
-      );
+      const token =
+        createSession(
+          'player',
+          user.email
+        );
 
       json(res, 200, {
         ok: true,
@@ -603,7 +685,10 @@ async function handle(req, res) {
 
       return;
     } catch (error) {
-      console.error('Erro no login:', error);
+      console.error(
+        'Erro no login:',
+        error
+      );
 
       json(res, 400, {
         ok: false,
@@ -622,7 +707,8 @@ async function handle(req, res) {
     req.method === 'GET' &&
     pathname === '/api/me'
   ) {
-    const session = requireSession(req, res);
+    const session =
+      requireSession(req, res);
 
     if (!session) {
       return;
@@ -641,7 +727,8 @@ async function handle(req, res) {
       return;
     }
 
-    const user = findUser(session.email);
+    const user =
+      findUser(session.email);
 
     if (!user) {
       unauthorized(res);
@@ -667,12 +754,20 @@ async function handle(req, res) {
     req.method === 'POST' &&
     pathname === '/api/logout'
   ) {
-    const authorization = String(
-      req.headers.authorization || ''
-    );
+    const authorization =
+      String(
+        req.headers.authorization || ''
+      );
 
-    if (authorization.startsWith('Bearer ')) {
-      const token = authorization.slice(7).trim();
+    if (
+      authorization.startsWith(
+        'Bearer '
+      )
+    ) {
+      const token =
+        authorization
+          .slice(7)
+          .trim();
 
       if (token) {
         sessions.delete(token);
@@ -695,13 +790,16 @@ async function handle(req, res) {
     req.method === 'POST' &&
     pathname === '/api/stream/start'
   ) {
-    const session = requireSession(req, res);
+    const session =
+      requireSession(req, res);
 
     if (!session) {
       return;
     }
 
-    if (session.type !== 'player') {
+    if (
+      session.type !== 'player'
+    ) {
       forbidden(res);
       return;
     }
@@ -709,37 +807,48 @@ async function handle(req, res) {
     if (!streaming.enabled) {
       json(res, 503, {
         ok: false,
-        error: 'O streaming está desativado.'
+        error:
+          'O streaming está desativado.'
       });
 
       return;
     }
 
-    if (streaming.status !== 'online') {
+    if (
+      streaming.status !== 'online'
+    ) {
       json(res, 503, {
         ok: false,
-        error: 'O PC de streaming está offline.',
+        error:
+          'O PC de streaming está offline.',
         streaming: {
-          status: streaming.status,
-          game: streaming.game,
-          host: streaming.host
+          status:
+            streaming.status,
+          game:
+            streaming.game,
+          host:
+            streaming.host
         }
       });
 
       return;
     }
 
-    const user = findUser(session.email);
+    const user =
+      findUser(session.email);
 
     if (!user) {
       unauthorized(res);
       return;
     }
 
-    if (Number(user.minutes || 0) <= 0) {
+    if (
+      Number(user.minutes || 0) <= 0
+    ) {
       json(res, 403, {
         ok: false,
-        error: 'Você não possui minutos disponíveis.'
+        error:
+          'Você não possui minutos disponíveis.'
       });
 
       return;
@@ -747,7 +856,8 @@ async function handle(req, res) {
 
     json(res, 200, {
       ok: true,
-      message: 'Solicitação de início enviada.',
+      message:
+        'Solicitação de início enviada.',
       game: streaming.game,
       host: streaming.host
     });
@@ -764,22 +874,28 @@ async function handle(req, res) {
     pathname === '/api/forgot-password'
   ) {
     try {
-      const body = await readBody(req);
-      const email = normalizeEmail(body.email);
+      const body =
+        await readBody(req);
 
-      const user = findUser(email);
+      const email =
+        normalizeEmail(body.email);
 
-      /*
-       * Não revelamos se o e-mail existe.
-       */
+      const user =
+        findUser(email);
 
       if (user) {
-        const token = randomToken(24);
+        const token =
+          randomToken(24);
 
-        resetTokens.set(token, {
-          email: user.email,
-          expiresAt: Date.now() + 15 * 60 * 1000
-        });
+        resetTokens.set(
+          token,
+          {
+            email: user.email,
+            expiresAt:
+              Date.now() +
+              15 * 60 * 1000
+          }
+        );
 
         console.log(
           `Token de recuperação para ${user.email}: ${token}`
@@ -812,53 +928,69 @@ async function handle(req, res) {
     pathname === '/api/reset-password'
   ) {
     try {
-      const body = await readBody(req);
+      const body =
+        await readBody(req);
 
-      const token = String(body.token || '');
-      const password = String(body.password || '');
+      const token =
+        String(body.token || '');
+
+      const password =
+        String(body.password || '');
 
       if (password.length < 8) {
         json(res, 400, {
           ok: false,
-          error: 'A senha deve ter pelo menos 8 caracteres.'
+          error:
+            'A senha deve ter pelo menos 8 caracteres.'
         });
 
         return;
       }
 
-      const reset = resetTokens.get(token);
+      const reset =
+        resetTokens.get(token);
 
       if (
         !reset ||
-        Date.now() > reset.expiresAt
+        Date.now() >
+          reset.expiresAt
       ) {
         resetTokens.delete(token);
 
         json(res, 400, {
           ok: false,
-          error: 'Token inválido ou expirado.'
+          error:
+            'Token inválido ou expirado.'
         });
 
         return;
       }
 
-      const index = findUserIndex(reset.email);
+      const index =
+        findUserIndex(
+          reset.email
+        );
 
       if (index < 0) {
         resetTokens.delete(token);
 
         json(res, 400, {
           ok: false,
-          error: 'Usuário não encontrado.'
+          error:
+            'Usuário não encontrado.'
         });
 
         return;
       }
 
-      const credentials = hashPassword(password);
+      const credentials =
+        hashPassword(password);
 
-      users[index].salt = credentials.salt;
-      users[index].hash = credentials.hash;
+      users[index].salt =
+        credentials.salt;
+
+      users[index].hash =
+        credentials.hash;
 
       saveUsers();
 
@@ -866,7 +998,8 @@ async function handle(req, res) {
 
       json(res, 200, {
         ok: true,
-        message: 'Senha alterada com sucesso.'
+        message:
+          'Senha alterada com sucesso.'
       });
 
       return;
@@ -888,7 +1021,8 @@ async function handle(req, res) {
     req.method === 'GET' &&
     pathname === '/api/admin/overview'
   ) {
-    const session = requireAdmin(req, res);
+    const session =
+      requireAdmin(req, res);
 
     if (!session) {
       return;
@@ -914,17 +1048,22 @@ async function handle(req, res) {
     req.method === 'POST' &&
     pathname === '/api/admin/time/add'
   ) {
-    const session = requireAdmin(req, res);
+    const session =
+      requireAdmin(req, res);
 
     if (!session) {
       return;
     }
 
     try {
-      const body = await readBody(req);
+      const body =
+        await readBody(req);
 
-      const email = normalizeEmail(body.email);
-      const minutes = Number(body.minutes);
+      const email =
+        normalizeEmail(body.email);
+
+      const minutes =
+        Number(body.minutes);
 
       if (
         !email ||
@@ -933,18 +1072,21 @@ async function handle(req, res) {
       ) {
         json(res, 400, {
           ok: false,
-          error: 'E-mail ou quantidade de minutos inválidos.'
+          error:
+            'E-mail ou quantidade de minutos inválidos.'
         });
 
         return;
       }
 
-      const user = findUser(email);
+      const user =
+        findUser(email);
 
       if (!user) {
         json(res, 404, {
           ok: false,
-          error: 'Usuário não encontrado.'
+          error:
+            'Usuário não encontrado.'
         });
 
         return;
@@ -958,8 +1100,10 @@ async function handle(req, res) {
 
       json(res, 200, {
         ok: true,
-        message: 'Minutos adicionados.',
-        user: publicUser(user)
+        message:
+          'Minutos adicionados.',
+        user:
+          publicUser(user)
       });
 
       return;
@@ -981,24 +1125,34 @@ async function handle(req, res) {
     req.method === 'POST' &&
     pathname === '/api/admin/stream/toggle'
   ) {
-    const session = requireAdmin(req, res);
+    const session =
+      requireAdmin(req, res);
 
     if (!session) {
       return;
     }
 
     try {
-      const body = await readBody(req);
+      const body =
+        await readBody(req);
 
-      if (typeof body.enabled === 'boolean') {
-        streaming.enabled = body.enabled;
+      if (
+        typeof body.enabled ===
+        'boolean'
+      ) {
+        streaming.enabled =
+          body.enabled;
       } else {
-        streaming.enabled = !streaming.enabled;
+        streaming.enabled =
+          !streaming.enabled;
       }
 
       if (!streaming.enabled) {
-        streaming.status = 'offline';
-        streaming.message = 'Streaming desativado pelo administrador.';
+        streaming.status =
+          'offline';
+
+        streaming.message =
+          'Streaming desativado pelo administrador.';
       }
 
       json(res, 200, {
@@ -1027,16 +1181,23 @@ async function handle(req, res) {
     req.method === 'POST' &&
     pathname === '/api/admin/stream/start'
   ) {
-    const session = requireAdmin(req, res);
+    const session =
+      requireAdmin(req, res);
 
     if (!session) {
       return;
     }
 
     streaming.enabled = true;
-    streaming.status = 'online';
-    streaming.message = 'Streaming iniciado pelo administrador.';
-    streaming.lastHeartbeat = new Date().toISOString();
+
+    streaming.status =
+      'online';
+
+    streaming.message =
+      'Streaming iniciado pelo administrador.';
+
+    streaming.lastHeartbeat =
+      new Date().toISOString();
 
     json(res, 200, {
       ok: true,
@@ -1056,14 +1217,18 @@ async function handle(req, res) {
     req.method === 'POST' &&
     pathname === '/api/admin/stream/stop'
   ) {
-    const session = requireAdmin(req, res);
+    const session =
+      requireAdmin(req, res);
 
     if (!session) {
       return;
     }
 
-    streaming.status = 'offline';
-    streaming.message = 'Streaming parado pelo administrador.';
+    streaming.status =
+      'offline';
+
+    streaming.message =
+      'Streaming parado pelo administrador.';
 
     json(res, 200, {
       ok: true,
@@ -1089,7 +1254,8 @@ async function handle(req, res) {
     }
 
     try {
-      const body = await readBody(req);
+      const body =
+        await readBody(req);
 
       streaming.lastHeartbeat =
         new Date().toISOString();
@@ -1100,18 +1266,22 @@ async function handle(req, res) {
           : 'online';
 
       if (body.game) {
-        streaming.game = String(body.game);
+        streaming.game =
+          String(body.game);
       }
 
       if (body.host) {
-        streaming.host = String(body.host);
+        streaming.host =
+          String(body.host);
       }
 
       if (body.message) {
-        streaming.message = String(body.message);
+        streaming.message =
+          String(body.message);
       } else {
         streaming.message =
-          streaming.status === 'online'
+          streaming.status ===
+          'online'
             ? 'PC de streaming online.'
             : 'PC de streaming offline.';
       }
@@ -1148,16 +1318,19 @@ async function handle(req, res) {
     }
 
     try {
-      const body = await readBody(req);
+      const body =
+        await readBody(req);
 
-      const command = String(
-        body.command || ''
-      ).trim();
+      const command =
+        String(
+          body.command || ''
+        ).trim();
 
       if (!command) {
         json(res, 400, {
           ok: false,
-          error: 'Comando não informado.'
+          error:
+            'Comando não informado.'
         });
 
         return;
@@ -1170,7 +1343,8 @@ async function handle(req, res) {
       json(res, 200, {
         ok: true,
         command,
-        message: 'Comando recebido.'
+        message:
+          'Comando recebido.'
       });
 
       return;
@@ -1208,30 +1382,147 @@ async function handle(req, res) {
   }
 
   /*
+   * SITE E ARQUIVOS ESTÁTICOS
+   */
+
+  if (
+    req.method === 'GET' &&
+    (
+      pathname === '/' ||
+      pathname === '/index.html' ||
+      pathname === '/app.js' ||
+      pathname === '/style.css' ||
+      pathname === '/styles.css'
+    )
+  ) {
+    let fileName =
+      'index.html';
+
+    if (
+      pathname === '/app.js'
+    ) {
+      fileName = 'app.js';
+    }
+
+    if (
+      pathname === '/style.css'
+    ) {
+      fileName = 'style.css';
+    }
+
+    if (
+      pathname === '/styles.css'
+    ) {
+      fileName = 'styles.css';
+    }
+
+    const filePath =
+      path.join(
+        ROOT,
+        fileName
+      );
+
+    if (
+      !fs.existsSync(filePath)
+    ) {
+      notFound(res);
+      return;
+    }
+
+    const extension =
+      path.extname(
+        filePath
+      ).toLowerCase();
+
+    const contentTypes = {
+      '.html':
+        'text/html; charset=utf-8',
+
+      '.js':
+        'application/javascript; charset=utf-8',
+
+      '.css':
+        'text/css; charset=utf-8',
+
+      '.json':
+        'application/json; charset=utf-8',
+
+      '.png':
+        'image/png',
+
+      '.jpg':
+        'image/jpeg',
+
+      '.jpeg':
+        'image/jpeg',
+
+      '.svg':
+        'image/svg+xml',
+
+      '.ico':
+        'image/x-icon'
+    };
+
+    const contentType =
+      contentTypes[extension] ||
+      'application/octet-stream';
+
+    const file =
+      fs.readFileSync(
+        filePath
+      );
+
+    res.writeHead(200, {
+      'Content-Type':
+        contentType,
+
+      'Content-Length':
+        file.length,
+
+      'Cache-Control':
+        'no-cache',
+
+      'X-Content-Type-Options':
+        'nosniff'
+    });
+
+    res.end(file);
+    return;
+  }
+
+  /*
    * UNKNOWN ROUTE
    */
 
   notFound(res);
 }
 
-const server = http.createServer(
-  async (req, res) => {
-    try {
-      await handle(req, res);
-    } catch (error) {
-      console.error('Erro inesperado:', error);
+const server =
+  http.createServer(
+    async (req, res) => {
+      try {
+        await handle(
+          req,
+          res
+        );
+      } catch (error) {
+        console.error(
+          'Erro inesperado:',
+          error
+        );
 
-      if (!res.headersSent) {
-        json(res, 500, {
-          ok: false,
-          error: 'Erro interno do servidor.'
-        });
-      } else {
-        res.end();
+        if (!res.headersSent) {
+          json(res, 500, {
+            ok: false,
+            error:
+              'Erro interno do servidor.'
+          });
+        } else {
+          res.end();
+        }
       }
     }
-  }
-);
+  );
 
 server.listen(
   PORT,
