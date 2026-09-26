@@ -1,28 +1,37 @@
 'use strict';
 
 const http = require('http');
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
-const PORT = Number(process.env.PORT || 8080);
-const ROOT = __dirname;
-const DB = path.join(ROOT, 'data', 'users.json');
+const PORT = process.env.PORT || 10000;
 
-const ADMIN_USER = String(process.env.ADMIN_USER || '')
-  .trim()
-  .toLowerCase();
+const ADMIN_USER = process.env.ADMIN_USER || 'admin';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+const STREAM_AGENT_KEY = process.env.STREAM_AGENT_KEY || '';
 
-const ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || '');
-
-const STREAM_AGENT_KEY = String(
-  process.env.STREAM_AGENT_KEY || ''
-);
+const SESSION_TTL = 1000 * 60 * 60 * 24 * 7;
+const RESET_TTL = 1000 * 60 * 30;
 
 const sessions = new Map();
 const resetTokens = new Map();
 const attempts = new Map();
 
+/*
+ * FILA DE COMANDOS DO AGENTE
+ *
+ * O PC GameCloud consulta:
+ * GET /api/agent/command
+ *
+ * Quando um jogador clica em "Iniciar FiveM",
+ * o servidor coloca "start_fivem" nesta fila.
+ */
+const agentCommands = [];
+
+/*
+ * ESTADO DO STREAMING
+ */
 const streaming = {
   enabled: true,
   status: 'offline',
@@ -32,75 +41,47 @@ const streaming = {
   message: 'Aguardando o PC de streaming.'
 };
 
-function ensureDatabase() {
-  const dir = path.dirname(DB);
-
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+/*
+ * USUÁRIOS
+ */
+const users = [
+  {
+    id: 1,
+    username: 'Miguel003',
+    email: 'miguel@example.com',
+    password: '123456',
+    minutes: 366,
+    isAdmin: false
   }
+];
 
-  if (!fs.existsSync(DB)) {
-    fs.writeFileSync(DB, '[]', 'utf8');
-  }
-}
-
-ensureDatabase();
-
-function loadUsers() {
-  try {
-    const data = fs.readFileSync(DB, 'utf8');
-    const users = JSON.parse(data);
-
-    return Array.isArray(users) ? users : [];
-  } catch (error) {
-    console.error('Erro ao carregar usuários:', error);
-    return [];
-  }
-}
-
-let users = loadUsers();
-
-function saveUsers() {
-  const dir = path.dirname(DB);
-
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-
-  const temporary = `${DB}.tmp`;
-
-  fs.writeFileSync(
-    temporary,
-    JSON.stringify(users, null, 2),
-    'utf8'
-  );
-
-  fs.renameSync(temporary, DB);
-}
+/*
+ * HELPERS
+ */
 
 function json(res, status, data) {
   const body = JSON.stringify(data);
 
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
-    'Content-Length': Buffer.byteLength(body),
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers':
       'Content-Type, Authorization, X-Stream-Agent-Key',
     'Access-Control-Allow-Methods':
-      'GET, POST, OPTIONS',
-    'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff'
+      'GET, POST, PUT, DELETE, OPTIONS',
+    'Content-Length': Buffer.byteLength(body)
   });
 
   res.end(body);
 }
 
-function notFound(res) {
-  json(res, 404, {
-    ok: false,
-    error: 'Rota não encontrada.'
+function text(res, status, body, contentType = 'text/plain; charset=utf-8') {
+  res.writeHead(status, {
+    'Content-Type': contentType,
+    'Access-Control-Allow-Origin': '*'
   });
+
+  res.end(body);
 }
 
 function unauthorized(res) {
@@ -110,10 +91,17 @@ function unauthorized(res) {
   });
 }
 
-function forbidden(res) {
-  json(res, 403, {
+function notFound(res) {
+  json(res, 404, {
     ok: false,
-    error: 'Acesso negado.'
+    error: 'Rota não encontrada.'
+  });
+}
+
+function badRequest(res, message = 'Dados inválidos.') {
+  json(res, 400, {
+    ok: false,
+    error: message
   });
 }
 
@@ -122,7 +110,7 @@ function readBody(req) {
     let body = '';
 
     req.on('data', chunk => {
-      body += chunk;
+      body += chunk.toString();
 
       if (body.length > 1024 * 1024) {
         reject(new Error('Payload muito grande.'));
@@ -147,125 +135,61 @@ function readBody(req) {
   });
 }
 
-function randomToken(bytes = 32) {
-  return crypto.randomBytes(bytes).toString('hex');
+function generateToken() {
+  return crypto.randomBytes(32).toString('hex');
 }
 
-function passwordDigest(password, salt) {
-  return crypto
-    .scryptSync(String(password), salt, 64)
-    .toString('hex');
-}
-
-function hashPassword(password) {
-  const salt = crypto.randomBytes(16).toString('hex');
-
-  return {
-    salt,
-    hash: passwordDigest(password, salt)
-  };
-}
-
-function verifyPassword(password, user) {
-  if (!user || !user.salt || !user.hash) {
-    return false;
-  }
-
-  try {
-    const expected = Buffer.from(user.hash, 'hex');
-
-    const actual = Buffer.from(
-      passwordDigest(password, user.salt),
-      'hex'
-    );
-
-    if (expected.length !== actual.length) {
-      return false;
-    }
-
-    return crypto.timingSafeEqual(
-      expected,
-      actual
-    );
-  } catch {
-    return false;
-  }
-}
-
-function safeEqual(a, b) {
-  const first = Buffer.from(String(a || ''));
-  const second = Buffer.from(String(b || ''));
-
-  if (first.length !== second.length) {
-    return false;
-  }
-
-  if (first.length === 0) {
-    return true;
-  }
-
-  return crypto.timingSafeEqual(
-    first,
-    second
-  );
-}
-
-function createSession(type, email) {
-  const token = randomToken(32);
+function createSession(user) {
+  const token = generateToken();
 
   sessions.set(token, {
-    type,
-    email,
+    userId: user.id,
     createdAt: Date.now()
   });
 
   return token;
 }
 
-function getSession(req) {
-  const authorization = String(
-    req.headers.authorization || ''
-  );
+function getSessionToken(req) {
+  const header = req.headers.authorization || '';
 
-  if (!authorization.startsWith('Bearer ')) {
-    return null;
+  if (header.startsWith('Bearer ')) {
+    return header.slice(7).trim();
   }
 
-  const token =
-    authorization.slice(7).trim();
+  return null;
+}
+
+function getCurrentUser(req) {
+  const token = getSessionToken(req);
 
   if (!token) {
     return null;
   }
 
-  return sessions.get(token) || null;
-}
-
-function requireSession(req, res) {
-  const session = getSession(req);
+  const session = sessions.get(token);
 
   if (!session) {
+    return null;
+  }
+
+  if (Date.now() - session.createdAt > SESSION_TTL) {
+    sessions.delete(token);
+    return null;
+  }
+
+  return users.find(user => user.id === session.userId) || null;
+}
+
+function requireUser(req, res) {
+  const user = getCurrentUser(req);
+
+  if (!user) {
     unauthorized(res);
     return null;
   }
 
-  return session;
-}
-
-function requireAdmin(req, res) {
-  const session =
-    requireSession(req, res);
-
-  if (!session) {
-    return null;
-  }
-
-  if (session.type !== 'admin') {
-    forbidden(res);
-    return null;
-  }
-
-  return session;
+  return user;
 }
 
 function agentAuthorized(req) {
@@ -273,111 +197,45 @@ function agentAuthorized(req) {
     return false;
   }
 
-  return safeEqual(
-    req.headers['x-stream-agent-key'],
-    STREAM_AGENT_KEY
-  );
+  const key = req.headers['x-stream-agent-key'];
+
+  return Boolean(key && key === STREAM_AGENT_KEY);
 }
 
-function validEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
-    email
-  );
-}
-
-function normalizeEmail(email) {
-  return String(email || '')
-    .trim()
-    .toLowerCase();
-}
-
-function rateLimit(
-  key,
-  max = 10,
-  windowMs = 60000
-) {
-  const now = Date.now();
-  const current = attempts.get(key);
-
-  if (
-    !current ||
-    now - current.startedAt > windowMs
-  ) {
-    attempts.set(key, {
-      startedAt: now,
-      count: 1
-    });
-
-    return true;
+function sanitizeUser(user) {
+  if (!user) {
+    return null;
   }
 
-  current.count += 1;
-
-  return current.count <= max;
-}
-
-function publicUser(user) {
   return {
+    id: user.id,
+    username: user.username,
     email: user.email,
-    name: user.name,
-    minutes: Number(user.minutes || 0)
+    minutes: user.minutes,
+    isAdmin: Boolean(user.isAdmin)
   };
 }
 
-function findUser(email) {
-  const normalized =
-    normalizeEmail(email);
-
-  return users.find(
-    user =>
-      normalizeEmail(user.email) ===
-      normalized
+function logRequest(req) {
+  console.log(
+    `${new Date().toISOString()} ${req.method} ${req.url}`
   );
 }
 
-function findUserIndex(email) {
-  const normalized =
-    normalizeEmail(email);
+/*
+ * SERVIDOR
+ */
 
-  return users.findIndex(
-    user =>
-      normalizeEmail(user.email) ===
-      normalized
-  );
-}
+const server = http.createServer(async (req, res) => {
+  logRequest(req);
 
-function removeExpiredSessions() {
-  const maxAge =
-    7 * 24 * 60 * 60 * 1000;
-
-  const now = Date.now();
-
-  for (
-    const [token, session]
-    of sessions.entries()
-  ) {
-    if (
-      now - session.createdAt >
-      maxAge
-    ) {
-      sessions.delete(token);
-    }
-  }
-}
-
-setInterval(
-  removeExpiredSessions,
-  60 * 60 * 1000
-).unref();
-
-async function handle(req, res) {
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Headers':
         'Content-Type, Authorization, X-Stream-Agent-Key',
       'Access-Control-Allow-Methods':
-        'GET, POST, OPTIONS'
+        'GET, POST, PUT, DELETE, OPTIONS'
     });
 
     res.end();
@@ -392,27 +250,233 @@ async function handle(req, res) {
   const pathname = url.pathname;
 
   /*
-   * HEALTH
+   * ==============================
+   * LOGIN
+   * ==============================
+   */
+
+  if (
+    req.method === 'POST' &&
+    pathname === '/api/login'
+  ) {
+    try {
+      const body = await readBody(req);
+
+      const username = String(body.username || '').trim();
+      const password = String(body.password || '');
+
+      const user = users.find(
+        item =>
+          item.username.toLowerCase() === username.toLowerCase() &&
+          item.password === password
+      );
+
+      if (!user) {
+        json(res, 401, {
+          ok: false,
+          error: 'Usuário ou senha incorretos.'
+        });
+
+        return;
+      }
+
+      const token = createSession(user);
+
+      json(res, 200, {
+        ok: true,
+        token,
+        user: sanitizeUser(user)
+      });
+
+      return;
+    } catch (error) {
+      console.error('Erro no login:', error);
+      badRequest(res);
+      return;
+    }
+  }
+
+  /*
+   * ==============================
+   * USUÁRIO ATUAL
+   * ==============================
    */
 
   if (
     req.method === 'GET' &&
-    pathname === '/api/health'
+    pathname === '/api/me'
   ) {
+    const user = getCurrentUser(req);
+
+    if (!user) {
+      unauthorized(res);
+      return;
+    }
+
     json(res, 200, {
       ok: true,
-      version: '4.1.0',
-      streaming: {
-        enabled: streaming.enabled,
-        status: streaming.status
-      }
+      user: sanitizeUser(user)
     });
 
     return;
   }
 
   /*
-   * STREAM STATUS
+   * ==============================
+   * LOGOUT
+   * ==============================
+   */
+
+  if (
+    req.method === 'POST' &&
+    pathname === '/api/logout'
+  ) {
+    const token = getSessionToken(req);
+
+    if (token) {
+      sessions.delete(token);
+    }
+
+    json(res, 200, {
+      ok: true
+    });
+
+    return;
+  }
+
+  /*
+   * ==============================
+   * ESQUECI MINHA SENHA
+   * ==============================
+   */
+
+  if (
+    req.method === 'POST' &&
+    pathname === '/api/forgot-password'
+  ) {
+    try {
+      const body = await readBody(req);
+
+      const email = String(body.email || '')
+        .trim()
+        .toLowerCase();
+
+      const user = users.find(
+        item => item.email.toLowerCase() === email
+      );
+
+      /*
+       * Por segurança, não revelamos se o e-mail existe.
+       */
+      if (!user) {
+        json(res, 200, {
+          ok: true,
+          message:
+            'Se o e-mail estiver cadastrado, as instruções serão enviadas.'
+        });
+
+        return;
+      }
+
+      const token = generateToken();
+
+      resetTokens.set(token, {
+        userId: user.id,
+        createdAt: Date.now()
+      });
+
+      console.log(
+        `Token de recuperação criado para ${user.email}: ${token}`
+      );
+
+      json(res, 200, {
+        ok: true,
+        message:
+          'Solicitação de recuperação criada.',
+        token
+      });
+
+      return;
+    } catch (error) {
+      console.error('Erro em forgot-password:', error);
+      badRequest(res);
+      return;
+    }
+  }
+
+  /*
+   * ==============================
+   * RESET DE SENHA
+   * ==============================
+   */
+
+  if (
+    req.method === 'POST' &&
+    pathname === '/api/reset-password'
+  ) {
+    try {
+      const body = await readBody(req);
+
+      const token = String(body.token || '');
+      const password = String(body.password || '');
+
+      if (!token || !password) {
+        badRequest(res, 'Token e senha são obrigatórios.');
+        return;
+      }
+
+      if (password.length < 6) {
+        badRequest(
+          res,
+          'A senha deve possuir pelo menos 6 caracteres.'
+        );
+        return;
+      }
+
+      const reset = resetTokens.get(token);
+
+      if (!reset) {
+        badRequest(res, 'Token inválido ou expirado.');
+        return;
+      }
+
+      if (Date.now() - reset.createdAt > RESET_TTL) {
+        resetTokens.delete(token);
+
+        badRequest(res, 'Token expirado.');
+        return;
+      }
+
+      const user = users.find(
+        item => item.id === reset.userId
+      );
+
+      if (!user) {
+        badRequest(res, 'Usuário não encontrado.');
+        return;
+      }
+
+      user.password = password;
+
+      resetTokens.delete(token);
+
+      json(res, 200, {
+        ok: true,
+        message: 'Senha alterada com sucesso.'
+      });
+
+      return;
+    } catch (error) {
+      console.error('Erro em reset-password:', error);
+      badRequest(res);
+      return;
+    }
+  }
+
+  /*
+   * ==============================
+   * STATUS DO STREAMING
+   * ==============================
    */
 
   if (
@@ -421,443 +485,76 @@ async function handle(req, res) {
   ) {
     json(res, 200, {
       ok: true,
-      streaming: {
-        enabled: streaming.enabled,
-        status: streaming.status,
-        game: streaming.game,
-        host: streaming.host,
-        lastHeartbeat:
-          streaming.lastHeartbeat,
-        message: streaming.message
-      }
+      streaming
     });
 
     return;
   }
 
   /*
-   * REGISTER
-   */
-
-  if (
-    req.method === 'POST' &&
-    pathname === '/api/users/register'
-  ) {
-    const ip =
-      req.socket.remoteAddress ||
-      'unknown';
-
-    if (
-      !rateLimit(
-        `register:${ip}`,
-        10,
-        60000
-      )
-    ) {
-      json(res, 429, {
-        ok: false,
-        error:
-          'Muitas tentativas. Aguarde um pouco.'
-      });
-
-      return;
-    }
-
-    try {
-      const body =
-        await readBody(req);
-
-      const email =
-        normalizeEmail(body.email);
-
-      const name =
-        String(body.name || '').trim();
-
-      const password =
-        String(body.password || '');
-
-      if (!validEmail(email)) {
-        json(res, 400, {
-          ok: false,
-          error: 'E-mail inválido.'
-        });
-
-        return;
-      }
-
-      if (name.length < 2) {
-        json(res, 400, {
-          ok: false,
-          error: 'Informe seu nome.'
-        });
-
-        return;
-      }
-
-      if (password.length < 8) {
-        json(res, 400, {
-          ok: false,
-          error:
-            'A senha deve ter pelo menos 8 caracteres.'
-        });
-
-        return;
-      }
-
-      if (
-        ADMIN_USER &&
-        email === ADMIN_USER
-      ) {
-        json(res, 409, {
-          ok: false,
-          error:
-            'Este e-mail é reservado para o administrador.'
-        });
-
-        return;
-      }
-
-      if (findUser(email)) {
-        json(res, 409, {
-          ok: false,
-          error:
-            'Este e-mail já está cadastrado.'
-        });
-
-        return;
-      }
-
-      const credentials =
-        hashPassword(password);
-
-      const user = {
-        email,
-        name,
-        salt: credentials.salt,
-        hash: credentials.hash,
-        minutes: 0,
-        createdAt:
-          new Date().toISOString()
-      };
-
-      users.push(user);
-
-      saveUsers();
-
-      console.log(
-        `Novo jogador cadastrado: ${email}`
-      );
-
-      json(res, 201, {
-        ok: true,
-        message:
-          'Cadastro realizado com sucesso.',
-        user: publicUser(user)
-      });
-
-      return;
-    } catch (error) {
-      console.error(
-        'Erro no cadastro:',
-        error
-      );
-
-      json(res, 400, {
-        ok: false,
-        error: 'Dados inválidos.'
-      });
-
-      return;
-    }
-  }
-
-  /*
-   * LOGIN
-   */
-
-  if (
-    req.method === 'POST' &&
-    pathname === '/api/login'
-  ) {
-    const ip =
-      req.socket.remoteAddress ||
-      'unknown';
-
-    if (
-      !rateLimit(
-        `login:${ip}`,
-        20,
-        60000
-      )
-    ) {
-      json(res, 429, {
-        ok: false,
-        error:
-          'Muitas tentativas. Aguarde um pouco.'
-      });
-
-      return;
-    }
-
-    try {
-      const body =
-        await readBody(req);
-
-      const email =
-        normalizeEmail(body.email);
-
-      const password =
-        String(body.password || '');
-
-      /*
-       * ADMIN
-       */
-
-      if (
-        ADMIN_USER &&
-        email === ADMIN_USER &&
-        ADMIN_PASSWORD &&
-        safeEqual(
-          password,
-          ADMIN_PASSWORD
-        )
-      ) {
-        const token =
-          createSession(
-            'admin',
-            ADMIN_USER
-          );
-
-        json(res, 200, {
-          ok: true,
-          token,
-          user: {
-            email: ADMIN_USER,
-            name: 'Administrador',
-            role: 'admin'
-          }
-        });
-
-        return;
-      }
-
-      /*
-       * PLAYER
-       */
-
-      const user =
-        findUser(email);
-
-      if (
-        !user ||
-        !verifyPassword(
-          password,
-          user
-        )
-      ) {
-        console.log(
-          `Falha de login: ${email}`
-        );
-
-        json(res, 401, {
-          ok: false,
-          error:
-            'E-mail ou senha incorretos.'
-        });
-
-        return;
-      }
-
-      const token =
-        createSession(
-          'player',
-          user.email
-        );
-
-      json(res, 200, {
-        ok: true,
-        token,
-        user: {
-          ...publicUser(user),
-          role: 'player'
-        }
-      });
-
-      return;
-    } catch (error) {
-      console.error(
-        'Erro no login:',
-        error
-      );
-
-      json(res, 400, {
-        ok: false,
-        error: 'Dados inválidos.'
-      });
-
-      return;
-    }
-  }
-
-  /*
-   * ME
-   */
-
-  if (
-    req.method === 'GET' &&
-    pathname === '/api/me'
-  ) {
-    const session =
-      requireSession(req, res);
-
-    if (!session) {
-      return;
-    }
-
-    if (session.type === 'admin') {
-      json(res, 200, {
-        ok: true,
-        user: {
-          email: ADMIN_USER,
-          name: 'Administrador',
-          role: 'admin'
-        }
-      });
-
-      return;
-    }
-
-    const user =
-      findUser(session.email);
-
-    if (!user) {
-      unauthorized(res);
-      return;
-    }
-
-    json(res, 200, {
-      ok: true,
-      user: {
-        ...publicUser(user),
-        role: 'player'
-      }
-    });
-
-    return;
-  }
-
-  /*
-   * LOGOUT
-   */
-
-  if (
-    req.method === 'POST' &&
-    pathname === '/api/logout'
-  ) {
-    const authorization =
-      String(
-        req.headers.authorization || ''
-      );
-
-    if (
-      authorization.startsWith(
-        'Bearer '
-      )
-    ) {
-      const token =
-        authorization
-          .slice(7)
-          .trim();
-
-      if (token) {
-        sessions.delete(token);
-      }
-    }
-
-    json(res, 200, {
-      ok: true,
-      message: 'Sessão encerrada.'
-    });
-
-    return;
-  }
-
-  /*
-   * PLAYER STREAM START
+   * ==============================
+   * INICIAR FIVEM PELO USUÁRIO
+   * ==============================
    */
 
   if (
     req.method === 'POST' &&
     pathname === '/api/stream/start'
   ) {
-    const session =
-      requireSession(req, res);
+    const user = requireUser(req, res);
 
-    if (!session) {
-      return;
-    }
-
-    if (
-      session.type !== 'player'
-    ) {
-      forbidden(res);
+    if (!user) {
       return;
     }
 
     if (!streaming.enabled) {
-      json(res, 503, {
+      json(res, 400, {
         ok: false,
-        error:
-          'O streaming está desativado.'
+        error: 'O streaming está desativado pelo administrador.'
       });
 
       return;
     }
 
-    if (
-      streaming.status !== 'online'
-    ) {
-      json(res, 503, {
+    if (streaming.status !== 'online') {
+      json(res, 400, {
         ok: false,
-        error:
-          'O PC de streaming está offline.',
-        streaming: {
-          status:
-            streaming.status,
-          game:
-            streaming.game,
-          host:
-            streaming.host
-        }
+        error: 'O PC de streaming está offline.'
       });
 
       return;
     }
 
-    const user =
-      findUser(session.email);
-
-    if (!user) {
-      unauthorized(res);
-      return;
-    }
-
-    if (
-      Number(user.minutes || 0) <= 0
-    ) {
-      json(res, 403, {
+    if (Number(user.minutes) <= 0) {
+      json(res, 400, {
         ok: false,
-        error:
-          'Você não possui minutos disponíveis.'
+        error: 'Você não possui minutos disponíveis.'
       });
 
       return;
     }
+
+    /*
+     * COLOCA O COMANDO NA FILA.
+     *
+     * O agente do PC vai consultar
+     * GET /api/agent/command
+     * e retirar este comando.
+     */
+
+    agentCommands.push({
+      command: 'start_fivem',
+      createdAt: Date.now(),
+      userId: user.id
+    });
+
+    console.log(
+      'Comando start_fivem colocado na fila.'
+    );
 
     json(res, 200, {
       ok: true,
-      message:
-        'Solicitação de início enviada.',
+      message: 'Solicitação de início enviada.',
       game: streaming.game,
       host: streaming.host
     });
@@ -866,382 +563,204 @@ async function handle(req, res) {
   }
 
   /*
-   * FORGOT PASSWORD
+   * ==============================
+   * ADMIN LOGIN
+   * ==============================
    */
 
   if (
     req.method === 'POST' &&
-    pathname === '/api/forgot-password'
+    pathname === '/api/admin/login'
   ) {
     try {
-      const body =
-        await readBody(req);
+      const body = await readBody(req);
 
-      const email =
-        normalizeEmail(body.email);
-
-      const user =
-        findUser(email);
-
-      if (user) {
-        const token =
-          randomToken(24);
-
-        resetTokens.set(
-          token,
-          {
-            email: user.email,
-            expiresAt:
-              Date.now() +
-              15 * 60 * 1000
-          }
-        );
-
-        console.log(
-          `Token de recuperação para ${user.email}: ${token}`
-        );
-      }
-
-      json(res, 200, {
-        ok: true,
-        message:
-          'Se o e-mail estiver cadastrado, as instruções de recuperação foram geradas.'
-      });
-
-      return;
-    } catch {
-      json(res, 400, {
-        ok: false,
-        error: 'Dados inválidos.'
-      });
-
-      return;
-    }
-  }
-
-  /*
-   * RESET PASSWORD
-   */
-
-  if (
-    req.method === 'POST' &&
-    pathname === '/api/reset-password'
-  ) {
-    try {
-      const body =
-        await readBody(req);
-
-      const token =
-        String(body.token || '');
-
-      const password =
-        String(body.password || '');
-
-      if (password.length < 8) {
-        json(res, 400, {
-          ok: false,
-          error:
-            'A senha deve ter pelo menos 8 caracteres.'
-        });
-
-        return;
-      }
-
-      const reset =
-        resetTokens.get(token);
+      const username = String(body.username || '');
+      const password = String(body.password || '');
 
       if (
-        !reset ||
-        Date.now() >
-          reset.expiresAt
+        username !== ADMIN_USER ||
+        password !== ADMIN_PASSWORD
       ) {
-        resetTokens.delete(token);
-
-        json(res, 400, {
+        json(res, 401, {
           ok: false,
-          error:
-            'Token inválido ou expirado.'
+          error: 'Credenciais administrativas inválidas.'
         });
 
         return;
       }
 
-      const index =
-        findUserIndex(
-          reset.email
-        );
+      const token = generateToken();
 
-      if (index < 0) {
-        resetTokens.delete(token);
-
-        json(res, 400, {
-          ok: false,
-          error:
-            'Usuário não encontrado.'
-        });
-
-        return;
-      }
-
-      const credentials =
-        hashPassword(password);
-
-      users[index].salt =
-        credentials.salt;
-
-      users[index].hash =
-        credentials.hash;
-
-      saveUsers();
-
-      resetTokens.delete(token);
+      sessions.set(`admin:${token}`, {
+        userId: 'admin',
+        createdAt: Date.now(),
+        admin: true
+      });
 
       json(res, 200, {
         ok: true,
-        message:
-          'Senha alterada com sucesso.'
+        token,
+        admin: true
       });
 
       return;
-    } catch {
-      json(res, 400, {
-        ok: false,
-        error: 'Dados inválidos.'
-      });
-
+    } catch (error) {
+      console.error('Erro no login admin:', error);
+      badRequest(res);
       return;
     }
   }
 
   /*
-   * ADMIN OVERVIEW
+   * ==============================
+   * FUNÇÃO DE AUTENTICAÇÃO ADMIN
+   * ==============================
+   */
+
+  function isAdmin(req) {
+    const token = getSessionToken(req);
+
+    if (!token) {
+      return false;
+    }
+
+    const session = sessions.get(`admin:${token}`);
+
+    if (!session) {
+      return false;
+    }
+
+    if (Date.now() - session.createdAt > SESSION_TTL) {
+      sessions.delete(`admin:${token}`);
+      return false;
+    }
+
+    return session.admin === true;
+  }
+
+  /*
+   * ==============================
+   * STATUS ADMIN
+   * ==============================
    */
 
   if (
     req.method === 'GET' &&
-    pathname === '/api/admin/overview'
+    pathname === '/api/admin/stream/status'
   ) {
-    const session =
-      requireAdmin(req, res);
-
-    if (!session) {
+    if (!isAdmin(req)) {
+      unauthorized(res);
       return;
     }
 
     json(res, 200, {
       ok: true,
-      users: users.map(publicUser),
-      totalUsers: users.length,
-      streaming: {
-        ...streaming
-      }
+      streaming
     });
 
     return;
   }
 
   /*
-   * ADMIN ADD TIME
-   */
-
-  if (
-    req.method === 'POST' &&
-    pathname === '/api/admin/time/add'
-  ) {
-    const session =
-      requireAdmin(req, res);
-
-    if (!session) {
-      return;
-    }
-
-    try {
-      const body =
-        await readBody(req);
-
-      const email =
-        normalizeEmail(body.email);
-
-      const minutes =
-        Number(body.minutes);
-
-      if (
-        !email ||
-        !Number.isFinite(minutes) ||
-        minutes <= 0
-      ) {
-        json(res, 400, {
-          ok: false,
-          error:
-            'E-mail ou quantidade de minutos inválidos.'
-        });
-
-        return;
-      }
-
-      const user =
-        findUser(email);
-
-      if (!user) {
-        json(res, 404, {
-          ok: false,
-          error:
-            'Usuário não encontrado.'
-        });
-
-        return;
-      }
-
-      user.minutes =
-        Number(user.minutes || 0) +
-        Math.floor(minutes);
-
-      saveUsers();
-
-      json(res, 200, {
-        ok: true,
-        message:
-          'Minutos adicionados.',
-        user:
-          publicUser(user)
-      });
-
-      return;
-    } catch {
-      json(res, 400, {
-        ok: false,
-        error: 'Dados inválidos.'
-      });
-
-      return;
-    }
-  }
-
-  /*
-   * ADMIN STREAM TOGGLE
+   * ==============================
+   * ADMIN ATIVA/DESATIVA STREAMING
+   * ==============================
    */
 
   if (
     req.method === 'POST' &&
     pathname === '/api/admin/stream/toggle'
   ) {
-    const session =
-      requireAdmin(req, res);
-
-    if (!session) {
+    if (!isAdmin(req)) {
+      unauthorized(res);
       return;
     }
 
     try {
-      const body =
-        await readBody(req);
+      const body = await readBody(req);
 
-      if (
-        typeof body.enabled ===
-        'boolean'
-      ) {
-        streaming.enabled =
-          body.enabled;
-      } else {
-        streaming.enabled =
-          !streaming.enabled;
-      }
+      streaming.enabled = Boolean(body.enabled);
 
       if (!streaming.enabled) {
-        streaming.status =
-          'offline';
-
+        streaming.status = 'offline';
         streaming.message =
           'Streaming desativado pelo administrador.';
       }
 
       json(res, 200, {
         ok: true,
-        streaming: {
-          ...streaming
-        }
+        streaming
       });
 
       return;
-    } catch {
-      json(res, 400, {
-        ok: false,
-        error: 'Dados inválidos.'
-      });
-
+    } catch (error) {
+      console.error('Erro ao alterar streaming:', error);
+      badRequest(res);
       return;
     }
   }
 
   /*
-   * ADMIN STREAM START
+   * ==============================
+   * ADMIN INICIA STREAMING
+   * ==============================
    */
 
   if (
     req.method === 'POST' &&
     pathname === '/api/admin/stream/start'
   ) {
-    const session =
-      requireAdmin(req, res);
-
-    if (!session) {
+    if (!isAdmin(req)) {
+      unauthorized(res);
       return;
     }
 
     streaming.enabled = true;
-
-    streaming.status =
-      'online';
-
+    streaming.status = 'online';
+    streaming.game = 'FiveM';
     streaming.message =
-      'Streaming iniciado pelo administrador.';
-
-    streaming.lastHeartbeat =
-      new Date().toISOString();
+      'PC de streaming online.';
 
     json(res, 200, {
       ok: true,
-      streaming: {
-        ...streaming
-      }
+      streaming
     });
 
     return;
   }
 
   /*
-   * ADMIN STREAM STOP
+   * ==============================
+   * ADMIN PARA STREAMING
+   * ==============================
    */
 
   if (
     req.method === 'POST' &&
     pathname === '/api/admin/stream/stop'
   ) {
-    const session =
-      requireAdmin(req, res);
-
-    if (!session) {
+    if (!isAdmin(req)) {
+      unauthorized(res);
       return;
     }
 
-    streaming.status =
-      'offline';
-
+    streaming.status = 'offline';
     streaming.message =
       'Streaming parado pelo administrador.';
 
     json(res, 200, {
       ok: true,
-      streaming: {
-        ...streaming
-      }
+      streaming
     });
 
     return;
   }
 
   /*
-   * STREAM AGENT HEARTBEAT
+   * ==============================
+   * AGENTE - HEARTBEAT
+   * ==============================
    */
 
   if (
@@ -1254,62 +773,51 @@ async function handle(req, res) {
     }
 
     try {
-      const body =
-        await readBody(req);
-
-      streaming.lastHeartbeat =
-        new Date().toISOString();
+      const body = await readBody(req);
 
       streaming.status =
         body.status === 'offline'
           ? 'offline'
           : 'online';
 
-      if (body.game) {
-        streaming.game =
-          String(body.game);
-      }
+      streaming.game =
+        body.game || 'FiveM';
 
-      if (body.host) {
-        streaming.host =
-          String(body.host);
-      }
+      streaming.host =
+        body.host ||
+        req.headers.host ||
+        'PC-GAMECLOUD';
 
-      if (body.message) {
-        streaming.message =
-          String(body.message);
-      } else {
-        streaming.message =
-          streaming.status ===
-          'online'
-            ? 'PC de streaming online.'
-            : 'PC de streaming offline.';
-      }
+      streaming.lastHeartbeat = new Date().toISOString();
+
+      streaming.message =
+        body.message ||
+        'PC de streaming conectado.';
 
       json(res, 200, {
         ok: true,
-        streaming: {
-          ...streaming
-        }
+        streaming
       });
 
       return;
-    } catch {
-      json(res, 400, {
-        ok: false,
-        error: 'Dados inválidos.'
-      });
-
+    } catch (error) {
+      console.error('Erro no heartbeat:', error);
+      badRequest(res);
       return;
     }
   }
 
   /*
-   * STREAM AGENT COMMAND
+   * ==============================
+   * AGENTE - BUSCAR COMANDO
+   * ==============================
+   *
+   * IMPORTANTE:
+   * O PowerShell usa GET aqui.
    */
 
   if (
-    req.method === 'POST' &&
+    req.method === 'GET' &&
     pathname === '/api/agent/command'
   ) {
     if (!agentAuthorized(req)) {
@@ -1317,49 +825,41 @@ async function handle(req, res) {
       return;
     }
 
-    try {
-      const body =
-        await readBody(req);
+    /*
+     * Retira o primeiro comando da fila.
+     *
+     * Se não houver comando:
+     * command = null
+     */
 
-      const command =
-        String(
-          body.command || ''
-        ).trim();
+    const command =
+      agentCommands.shift() || null;
 
-      if (!command) {
-        json(res, 400, {
-          ok: false,
-          error:
-            'Comando não informado.'
-        });
-
-        return;
-      }
-
+    if (command) {
       console.log(
-        `Comando recebido do agente: ${command}`
+        `Comando entregue ao agente: ${command.command}`
       );
-
-      json(res, 200, {
-        ok: true,
-        command,
-        message:
-          'Comando recebido.'
-      });
-
-      return;
-    } catch {
-      json(res, 400, {
-        ok: false,
-        error: 'Dados inválidos.'
-      });
-
-      return;
     }
+
+    json(res, 200, {
+      ok: true,
+      command: command
+        ? command.command
+        : null,
+      message: command
+        ? 'Comando disponível.'
+        : 'Nenhum comando pendente.'
+    });
+
+    return;
   }
 
   /*
-   * STREAM AGENT STATUS
+   * ==============================
+   * AGENTE - STATUS
+   * ==============================
+   *
+   * Mantemos GET para consulta do status.
    */
 
   if (
@@ -1373,175 +873,214 @@ async function handle(req, res) {
 
     json(res, 200, {
       ok: true,
-      streaming: {
-        ...streaming
-      }
+      streaming
     });
 
     return;
   }
 
   /*
-   * SITE E ARQUIVOS ESTÁTICOS
+   * ==============================
+   * AGENTE - COMANDO MANUAL
+   * ==============================
+   *
+   * Mantém POST para compatibilidade
+   * com chamadas administrativas/testes.
    */
 
   if (
-    req.method === 'GET' &&
-    (
-      pathname === '/' ||
-      pathname === '/index.html' ||
-      pathname === '/app.js' ||
-      pathname === '/style.css' ||
-      pathname === '/styles.css'
-    )
+    req.method === 'POST' &&
+    pathname === '/api/agent/command'
   ) {
-    let fileName =
-      'index.html';
-
-    if (
-      pathname === '/app.js'
-    ) {
-      fileName = 'app.js';
+    if (!agentAuthorized(req)) {
+      unauthorized(res);
+      return;
     }
 
-    if (
-      pathname === '/style.css'
-    ) {
-      fileName = 'style.css';
-    }
+    try {
+      const body = await readBody(req);
 
-    if (
-      pathname === '/styles.css'
-    ) {
-      fileName = 'styles.css';
-    }
+      const command = String(body.command || '').trim();
 
-    const filePath =
-      path.join(
-        ROOT,
-        fileName
+      if (!command) {
+        badRequest(res, 'Comando não informado.');
+        return;
+      }
+
+      console.log(
+        `Comando recebido do agente: ${command}`
       );
 
-    if (
-      !fs.existsSync(filePath)
-    ) {
+      json(res, 200, {
+        ok: true,
+        command
+      });
+
+      return;
+    } catch (error) {
+      console.error(
+        'Erro no comando do agente:',
+        error
+      );
+
+      badRequest(res);
+      return;
+    }
+  }
+
+  /*
+   * ==============================
+   * ARQUIVOS ESTÁTICOS
+   * ==============================
+   */
+
+  let filePath;
+
+  if (pathname === '/') {
+    filePath = path.join(
+      __dirname,
+      'frontend',
+      'index.html'
+    );
+  } else if (
+    pathname === '/index.html'
+  ) {
+    filePath = path.join(
+      __dirname,
+      'frontend',
+      'index.html'
+    );
+  } else if (
+    pathname === '/app.js'
+  ) {
+    filePath = path.join(
+      __dirname,
+      'frontend',
+      'app.js'
+    );
+  } else if (
+    pathname === '/style.css'
+  ) {
+    filePath = path.join(
+      __dirname,
+      'frontend',
+      'style.css'
+    );
+  } else if (
+    pathname === '/styles.css'
+  ) {
+    filePath = path.join(
+      __dirname,
+      'frontend',
+      'styles.css'
+    );
+  } else {
+    filePath = path.join(
+      __dirname,
+      'frontend',
+      pathname.replace(/^\/+/, '')
+    );
+  }
+
+  /*
+   * Evita acesso a arquivos fora da pasta frontend.
+   */
+
+  const frontendRoot = path.resolve(
+    path.join(__dirname, 'frontend')
+  );
+
+  const resolvedFile = path.resolve(filePath);
+
+  if (
+    !resolvedFile.startsWith(frontendRoot)
+  ) {
+    notFound(res);
+    return;
+  }
+
+  fs.stat(resolvedFile, (error, stats) => {
+    if (error || !stats.isFile()) {
       notFound(res);
       return;
     }
 
-    const extension =
-      path.extname(
-        filePath
-      ).toLowerCase();
+    const ext = path.extname(resolvedFile).toLowerCase();
 
     const contentTypes = {
-      '.html':
-        'text/html; charset=utf-8',
-
-      '.js':
-        'application/javascript; charset=utf-8',
-
-      '.css':
-        'text/css; charset=utf-8',
-
-      '.json':
-        'application/json; charset=utf-8',
-
-      '.png':
-        'image/png',
-
-      '.jpg':
-        'image/jpeg',
-
-      '.jpeg':
-        'image/jpeg',
-
-      '.svg':
-        'image/svg+xml',
-
-      '.ico':
-        'image/x-icon'
+      '.html': 'text/html; charset=utf-8',
+      '.js': 'application/javascript; charset=utf-8',
+      '.css': 'text/css; charset=utf-8',
+      '.json': 'application/json; charset=utf-8',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.svg': 'image/svg+xml',
+      '.ico': 'image/x-icon'
     };
 
     const contentType =
-      contentTypes[extension] ||
+      contentTypes[ext] ||
       'application/octet-stream';
 
-    const file =
-      fs.readFileSync(
-        filePath
-      );
-
-    res.writeHead(200, {
-      'Content-Type':
-        contentType,
-
-      'Content-Length':
-        file.length,
-
-      'Cache-Control':
-        'no-cache',
-
-      'X-Content-Type-Options':
-        'nosniff'
-    });
-
-    res.end(file);
-    return;
-  }
-
-  /*
-   * UNKNOWN ROUTE
-   */
-
-  notFound(res);
-}
-
-const server =
-  http.createServer(
-    async (req, res) => {
-      try {
-        await handle(
-          req,
-          res
-        );
-      } catch (error) {
-        console.error(
-          'Erro inesperado:',
-          error
+    fs.readFile(resolvedFile, (readError, data) => {
+      if (readError) {
+        text(
+          res,
+          500,
+          'Erro ao carregar arquivo.'
         );
 
-        if (!res.headersSent) {
-          json(res, 500, {
-            ok: false,
-            error:
-              'Erro interno do servidor.'
-          });
-        } else {
-          res.end();
-        }
+        return;
       }
+
+      res.writeHead(200, {
+        'Content-Type': contentType,
+        'Cache-Control': 'no-cache'
+      });
+
+      res.end(data);
+    });
+  });
+});
+
+/*
+ * LIMPEZA DE SESSÕES EXPIRADAS
+ */
+
+setInterval(() => {
+  const now = Date.now();
+
+  for (const [token, session] of sessions.entries()) {
+    if (now - session.createdAt > SESSION_TTL) {
+      sessions.delete(token);
     }
-  );
-
-server.listen(
-  PORT,
-  '0.0.0.0',
-  () => {
-    console.log(
-      `Império GameCloud 4.1.0 rodando na porta ${PORT}`
-    );
-
-    console.log(
-      `ADMIN_USER configurado: ${Boolean(ADMIN_USER)}`
-    );
-
-    console.log(
-      `ADMIN_PASSWORD configurada: ${Boolean(ADMIN_PASSWORD)}`
-    );
-
-    console.log(
-      `STREAM_AGENT_KEY configurada: ${Boolean(STREAM_AGENT_KEY)}`
-    );
   }
-);
+
+  for (const [token, reset] of resetTokens.entries()) {
+    if (now - reset.createdAt > RESET_TTL) {
+      resetTokens.delete(token);
+    }
+  }
+}, 60 * 1000);
+
+/*
+ * INICIALIZAÇÃO
+ */
+
+server.listen(PORT, () => {
+  console.log('=================================');
+  console.log(' IMPÉRIO GAMECLOUD 4.1.0');
+  console.log('=================================');
+  console.log(`Porta: ${PORT}`);
+  console.log(
+    `STREAM_AGENT_KEY configurada: ${Boolean(STREAM_AGENT_KEY)}`
+  );
+  console.log(
+    `ADMIN_PASSWORD configurada: ${Boolean(ADMIN_PASSWORD)}`
+  );
+  console.log(
+    `ADMIN_USER configurado: ${Boolean(ADMIN_USER)}`
+  );
+  console.log('=================================');
+});
