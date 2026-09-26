@@ -1,5 +1,7 @@
 'use strict';
 
+const APP_VERSION = '4.1.1';
+
 const API_BASE =
   'https://imperio-gamecloud-1.onrender.com/api/';
 
@@ -321,10 +323,6 @@ async function loadPlayerStreamStatus() {
   );
 }
 
-/*
- * CORRIGIDO:
- * O servidor retorna "users", não "players".
- */
 async function loadAdmin() {
   const result =
     await api(
@@ -336,22 +334,11 @@ async function loadAdmin() {
       ? result.users
       : [];
 
-  /*
-   * O servidor retorna a lista de usuários.
-   * Portanto, o total correto é users.length.
-   */
   setText(
     'users',
     users.length
   );
 
-  /*
-   * O backend atual não envia "online"
-   * dentro de cada usuário.
-   *
-   * Para não mostrar informação falsa,
-   * usamos 0 até o backend passar esse dado.
-   */
   let onlineCount = 0;
 
   users.forEach(
@@ -416,11 +403,6 @@ async function loadAdmin() {
           player.minutes
         );
 
-      /*
-       * O backend atual não envia online.
-       * Por isso o jogador aparece como offline
-       * até essa informação ser adicionada ao backend.
-       */
       status.textContent =
         player.online === true
           ? '🟢 Online'
@@ -548,12 +530,6 @@ async function startPlayerStream() {
         'stream/start',
         'POST'
       );
-
-    /*
-     * O backend atual não retorna minutes
-     * nessa rota. O valor será atualizado
-     * quando o usuário recarregar os dados.
-     */
 
     await loadPlayerStreamStatus();
 
@@ -870,10 +846,6 @@ function setupForgot() {
           );
         }
 
-        /*
-         * CORRIGIDO:
-         * server.js usa /api/forgot-password
-         */
         const result =
           await api(
             'forgot-password',
@@ -938,10 +910,6 @@ async function setupReset() {
           );
         }
 
-        /*
-         * CORRIGIDO:
-         * server.js usa /api/reset-password
-         */
         const result =
           await api(
             'reset-password',
@@ -1111,11 +1079,6 @@ function setupAdmin() {
 
           await loadAdmin();
 
-          /*
-           * CORRIGIDO:
-           * server.js retorna o usuário dentro
-           * de result.user, e não result.minutes.
-           */
           const updatedMinutes =
             result.user &&
             result.user.minutes !== undefined
