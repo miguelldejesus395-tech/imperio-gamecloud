@@ -251,10 +251,13 @@ async function loadStreamStatus() {
   const result =
     await api('stream/status');
 
+  const streaming =
+    result.streaming || result;
+
   setText(
     'streamStatus',
     streamStatusText(
-      result.status
+      streaming.status
     )
   );
 
@@ -262,7 +265,7 @@ async function loadStreamStatus() {
     'streamGame',
     'Jogo: ' +
       (
-        result.game ||
+        streaming.game ||
         'FiveM'
       )
   );
@@ -271,23 +274,23 @@ async function loadStreamStatus() {
     'streamHost',
     'Computador: ' +
       (
-        result.host ||
+        streaming.host ||
         '—'
       )
   );
 
   setText(
     'streamMessage',
-    result.message ||
+    streaming.message ||
       '—'
   );
 
   setText(
     'streamHeartbeat',
-    result.lastHeartbeat
+    streaming.lastHeartbeat
       ? 'Último contato: ' +
         new Date(
-          result.lastHeartbeat
+          streaming.lastHeartbeat
         ).toLocaleString(
           'pt-BR'
         )
@@ -299,7 +302,7 @@ async function loadStreamStatus() {
 
   if (toggle) {
     toggle.textContent =
-      result.enabled
+      streaming.enabled
         ? '🔄 Desativar streaming'
         : '🔄 Ativar streaming';
   }
@@ -309,16 +312,19 @@ async function loadPlayerStreamStatus() {
   const result =
     await api('stream/status');
 
+  const streaming =
+    result.streaming || result;
+
   setText(
     'playerStreamStatus',
     streamStatusText(
-      result.status
+      streaming.status
     )
   );
 
   setText(
     'playerStreamMessage',
-    result.message ||
+    streaming.message ||
       'Aguardando o computador GameCloud.'
   );
 }
@@ -629,13 +635,16 @@ async function toggleAdminStream() {
         'stream/status'
       );
 
+    const currentStreaming =
+      status.streaming || status;
+
     const result =
       await api(
         'admin/stream/toggle',
         'POST',
         {
           enabled:
-            !status.enabled
+            !currentStreaming.enabled
         }
       );
 
