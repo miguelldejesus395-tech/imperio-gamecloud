@@ -17,6 +17,15 @@ function el(id) {
   return document.getElementById(id);
 }
 
+function setText(id, value) {
+  const node = el(id);
+  if (!node) return;
+
+  node.textContent =
+    value === null || value === undefined
+      ? ''
+      : String(value);
+}
 function show(page) {
   const userPages = document.querySelectorAll('.user-page');
   const userPanel = document.getElementById('user');
