@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '4.1.1';
+const APP_VERSION = '4.2.0';
 
 const API_BASE =
   'https://imperio-gamecloud-1.onrender.com/api/';
@@ -101,9 +101,12 @@ function saveSession(result, remember) {
     result.token || '';
 
   role =
-    result.user
-      ? result.user.role || ''
-      : result.role || '';
+    result.role ||
+    (
+      result.user
+        ? result.user.role || ''
+        : ''
+    );
 
   localStorage.removeItem(
     'igc_token'
@@ -247,12 +250,226 @@ function setButtonBusy(
   }
 }
 
+/*
+ * LOGIN ADMINISTRADOR
+ *
+ * O index.html atual não possui uma tela
+ * separada para administrador.
+ *
+ * Por isso criamos a tela pelo JavaScript.
+ */
+function createAdminLogin() {
+  if (
+    el('adminLoginButton') ||
+    el('adminLoginPage')
+  ) {
+    return;
+  }
+
+  const loginPage =
+    el('login');
+
+  if (!loginPage) {
+    return;
+  }
+
+  const card =
+    loginPage.querySelector('.card');
+
+  if (!card) {
+    return;
+  }
+
+  const button =
+    document.createElement('button');
+
+  button.id =
+    'adminLoginButton';
+
+  button.type =
+    'button';
+
+  button.className =
+    'wide';
+
+  button.textContent =
+    '👑 Entrar como administrador';
+
+  button.style.marginTop =
+    '10px';
+
+  button.addEventListener(
+    'click',
+    function () {
+      show('adminLoginPage');
+      message('');
+    }
+  );
+
+  card.appendChild(button);
+
+  const section =
+    document.createElement('section');
+
+  section.id =
+    'adminLoginPage';
+
+  section.className =
+    'page';
+
+  section.innerHTML = `
+    <div class="card auth">
+      <h2>👑 Área administrativa</h2>
+
+      <p class="muted">
+        Entre usando o usuário e a senha de administrador
+        configurados no Render.
+      </p>
+
+      <form id="adminLoginForm">
+
+        <input
+          id="adminUsername"
+          type="text"
+          autocomplete="username"
+          placeholder="Usuário do administrador"
+          required
+        >
+
+        <input
+          id="adminPassword"
+          type="password"
+          autocomplete="current-password"
+          placeholder="Senha do administrador"
+          required
+        >
+
+        <label class="row">
+          <input
+            id="adminRemember"
+            type="checkbox"
+            checked
+          >
+          Manter administrador conectado
+        </label>
+
+        <button
+          class="primary wide"
+          type="submit"
+        >
+          👑 Entrar no painel
+        </button>
+
+      </form>
+
+      <button
+        id="backToLogin"
+        class="wide"
+        type="button"
+      >
+        Voltar para o login
+      </button>
+    </div>
+  `;
+
+  const main =
+    document.querySelector('main.wrap');
+
+  if (main) {
+    main.appendChild(section);
+  }
+
+  const adminForm =
+    el('adminLoginForm');
+
+  if (adminForm) {
+    adminForm.addEventListener(
+      'submit',
+      async function (event) {
+        event.preventDefault();
+
+        const username =
+          el('adminUsername')
+            .value
+            .trim();
+
+        const password =
+          el('adminPassword')
+            .value;
+
+        const remember =
+          el('adminRemember')
+            ? el('adminRemember').checked
+            : false;
+
+        try {
+          if (
+            !username ||
+            !password
+          ) {
+            throw new Error(
+              'Informe o usuário e a senha do administrador.'
+            );
+          }
+
+          const result =
+            await api(
+              'admin/login',
+              'POST',
+              {
+                username:
+                  username,
+                password:
+                  password
+              }
+            );
+
+          saveSession(
+            result,
+            remember
+          );
+
+          role = 'admin';
+
+          show('admin');
+
+          message(
+            'Login de administrador realizado com sucesso.'
+          );
+
+          await loadAdmin();
+          await loadStreamStatus();
+
+        } catch (error) {
+          fail(error);
+        }
+      }
+    );
+  }
+
+  const back =
+    el('backToLogin');
+
+  if (back) {
+    back.addEventListener(
+      'click',
+      function () {
+        show('login');
+        message('');
+      }
+    );
+  }
+}
+
 async function loadStreamStatus() {
   const result =
-    await api('stream/status');
+    await api(
+      'stream/status'
+    );
 
   const streaming =
-    result.streaming || result;
+    result.streaming ||
+    result;
 
   setText(
     'streamStatus',
@@ -310,10 +527,13 @@ async function loadStreamStatus() {
 
 async function loadPlayerStreamStatus() {
   const result =
-    await api('stream/status');
+    await api(
+      'stream/status'
+    );
 
   const streaming =
-    result.streaming || result;
+    result.streaming ||
+    result;
 
   setText(
     'playerStreamStatus',
@@ -349,7 +569,9 @@ async function loadAdmin() {
 
   users.forEach(
     function (player) {
-      if (player.online === true) {
+      if (
+        player.online === true
+      ) {
         onlineCount++;
       }
     }
@@ -398,6 +620,7 @@ async function loadAdmin() {
 
       name.textContent =
         player.name ||
+        player.username ||
         'Jogador';
 
       email.textContent =
@@ -443,8 +666,25 @@ async function loadAdmin() {
 }
 
 async function loadUser() {
+  /*
+   * ADMINISTRADOR
+   *
+   * Não chamamos /me porque essa rota
+   * é destinada ao jogador.
+   */
+  if (role === 'admin') {
+    show('admin');
+
+    await loadAdmin();
+    await loadStreamStatus();
+
+    return;
+  }
+
   const result =
-    await api('me');
+    await api(
+      'me'
+    );
 
   const user =
     result.user ||
@@ -453,7 +693,7 @@ async function loadUser() {
   role =
     user.role ||
     result.role ||
-    '';
+    'player';
 
   const storage =
     localStorage.getItem(
@@ -467,6 +707,15 @@ async function loadUser() {
       'igc_role',
       role
     );
+  }
+
+  if (role === 'admin') {
+    show('admin');
+
+    await loadAdmin();
+    await loadStreamStatus();
+
+    return;
   }
 
   setText(
@@ -487,17 +736,9 @@ async function loadUser() {
     )
   );
 
-  if (role === 'admin') {
-    show('admin');
+  show('home');
 
-    await loadAdmin();
-
-    await loadStreamStatus();
-  } else {
-    show('home');
-
-    await loadPlayerStreamStatus();
-  }
+  await loadPlayerStreamStatus();
 }
 
 async function logout() {
@@ -543,8 +784,10 @@ async function startPlayerStream() {
       result.message ||
         'FiveM solicitado com sucesso.'
     );
+
   } catch (error) {
     fail(error);
+
   } finally {
     setButtonBusy(
       button,
@@ -576,8 +819,10 @@ async function startAdminStream() {
       result.message ||
         'Início do FiveM solicitado.'
     );
+
   } catch (error) {
     fail(error);
+
   } finally {
     setButtonBusy(
       button,
@@ -609,8 +854,10 @@ async function stopAdminStream() {
       result.message ||
         'Encerramento do FiveM solicitado.'
     );
+
   } catch (error) {
     fail(error);
+
   } finally {
     setButtonBusy(
       button,
@@ -636,7 +883,8 @@ async function toggleAdminStream() {
       );
 
     const currentStreaming =
-      status.streaming || status;
+      status.streaming ||
+      status;
 
     const result =
       await api(
@@ -654,8 +902,10 @@ async function toggleAdminStream() {
       result.message ||
         'Configuração do streaming atualizada.'
     );
+
   } catch (error) {
     fail(error);
+
   } finally {
     setButtonBusy(
       button,
@@ -732,9 +982,12 @@ function setupLogin() {
             'login',
             'POST',
             {
-              email: email,
-              password: password,
-              remember: remember
+              email:
+                email,
+              password:
+                password,
+              remember:
+                remember
             }
           );
 
@@ -748,6 +1001,7 @@ function setupLogin() {
         );
 
         await loadUser();
+
       } catch (error) {
         fail(error);
       }
@@ -806,9 +1060,12 @@ function setupRegister() {
             'users/register',
             'POST',
             {
-              name: name,
-              email: email,
-              password: password
+              name:
+                name,
+              email:
+                email,
+              password:
+                password
             }
           );
 
@@ -823,6 +1080,7 @@ function setupRegister() {
           result.message ||
             'Conta criada com sucesso. Agora faça login.'
         );
+
       } catch (error) {
         fail(error);
       }
@@ -860,7 +1118,8 @@ function setupForgot() {
             'forgot-password',
             'POST',
             {
-              email: email
+              email:
+                email
             }
           );
 
@@ -872,6 +1131,7 @@ function setupForgot() {
           result.message ||
             'Solicitação enviada.'
         );
+
       } catch (error) {
         fail(error);
       }
@@ -924,8 +1184,10 @@ async function setupReset() {
             'reset-password',
             'POST',
             {
-              token: resetToken,
-              password: password
+              token:
+                resetToken,
+              password:
+                password
             }
           );
 
@@ -943,6 +1205,7 @@ async function setupReset() {
           result.message ||
             'Senha alterada com sucesso. Faça login.'
         );
+
       } catch (error) {
         fail(error);
       }
@@ -1012,6 +1275,7 @@ function setupAdmin() {
           message(
             'Status do GameCloud atualizado.'
           );
+
         } catch (error) {
           fail(error);
         }
@@ -1031,6 +1295,7 @@ function setupAdmin() {
           message(
             'Painel atualizado.'
           );
+
         } catch (error) {
           fail(error);
         }
@@ -1079,8 +1344,10 @@ function setupAdmin() {
               'admin/time/add',
               'POST',
               {
-                email: email,
-                minutes: minutes
+                email:
+                  email,
+                minutes:
+                  minutes
               }
             );
 
@@ -1106,6 +1373,7 @@ function setupAdmin() {
                 'Tempo do jogador atualizado com sucesso.'
               )
           );
+
         } catch (error) {
           fail(error);
         }
@@ -1118,17 +1386,20 @@ async function init() {
   setupNavigation();
 
   setupLogin();
-
   setupRegister();
-
   setupForgot();
-
   setupPlayer();
-
   setupAdmin();
 
+  /*
+   * Cria o botão/tela de administrador.
+   */
+  createAdminLogin();
+
   document
-    .querySelectorAll('.logout')
+    .querySelectorAll(
+      '.logout'
+    )
     .forEach(
       function (button) {
         button.addEventListener(
@@ -1151,6 +1422,7 @@ async function init() {
           message(
             'Dados atualizados.'
           );
+
         } catch (error) {
           fail(error);
         }
@@ -1167,7 +1439,21 @@ async function init() {
 
   if (token) {
     try {
+      /*
+       * Se já existe uma sessão de administrador,
+       * abrimos diretamente o painel.
+       */
+      if (role === 'admin') {
+        show('admin');
+
+        await loadAdmin();
+        await loadStreamStatus();
+
+        return;
+      }
+
       await loadUser();
+
     } catch (error) {
       clearSession();
 
@@ -1178,6 +1464,7 @@ async function init() {
         true
       );
     }
+
   } else if (!resetToken) {
     show('login');
   }
