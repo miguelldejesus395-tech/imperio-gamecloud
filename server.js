@@ -17,21 +17,30 @@ const RESET_TTL = 1000 * 60 * 30;
 const sessions = new Map();
 const resetTokens = new Map();
 const attempts = new Map();
-
-/*
- * FILA DE COMANDOS DO AGENTE
- *
- * O PC GameCloud consulta:
- * GET /api/agent/command
- *
- * Quando um jogador clica em "Iniciar FiveM",
- * o servidor coloca "start_fivem" nesta fila.
- */
 const agentCommands = [];
 
 /*
- * ESTADO DO STREAMING
+ * ==============================
+ * USUÁRIOS
+ * ==============================
  */
+
+const users = [
+  {
+    id: 1,
+    username: 'Miguel003',
+    email: 'miguel@example.com',
+    password: '123456',
+    minutes: 366
+  }
+];
+
+/*
+ * ==============================
+ * STREAMING
+ * ==============================
+ */
+
 const streaming = {
   enabled: true,
   status: 'offline',
@@ -42,53 +51,27 @@ const streaming = {
 };
 
 /*
- * USUÁRIOS
- */
-const users = [
-  {
-    id: 1,
-    username: 'Miguel003',
-    email: 'miguel@example.com',
-    password: '123456',
-    minutes: 366,
-    isAdmin: false
-  }
-];
-
-/*
- * HELPERS
+ * ==============================
+ * FUNÇÕES AUXILIARES
+ * ==============================
  */
 
-function json(res, status, data) {
-  const body = JSON.stringify(data);
-
-  res.writeHead(status, {
+function json(res, statusCode, data) {
+  res.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers':
-      'Content-Type, Authorization, X-Stream-Agent-Key',
-    'Access-Control-Allow-Methods':
-      'GET, POST, PUT, DELETE, OPTIONS',
-    'Content-Length': Buffer.byteLength(body)
+    'Cache-Control': 'no-cache'
   });
 
-  res.end(body);
+  res.end(JSON.stringify(data));
 }
 
-function text(res, status, body, contentType = 'text/plain; charset=utf-8') {
-  res.writeHead(status, {
-    'Content-Type': contentType,
-    'Access-Control-Allow-Origin': '*'
+function text(res, statusCode, message) {
+  res.writeHead(statusCode, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Cache-Control': 'no-cache'
   });
 
-  res.end(body);
-}
-
-function unauthorized(res) {
-  json(res, 401, {
-    ok: false,
-    error: 'Não autorizado.'
-  });
+  res.end(message);
 }
 
 function notFound(res) {
@@ -98,22 +81,108 @@ function notFound(res) {
   });
 }
 
-function badRequest(res, message = 'Dados inválidos.') {
+function unauthorized(res) {
+  json(res, 401, {
+    ok: false,
+    error: 'Não autorizado.'
+  });
+}
+
+function badRequest(res, message) {
   json(res, 400, {
     ok: false,
-    error: message
+    error: message || 'Requisição inválida.'
   });
+}
+
+function serverError(res, message) {
+  json(res, 500, {
+    ok: false,
+    error: message || 'Erro interno do servidor.'
+  });
+}
+
+function createToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+function getCookies(req) {
+  const header = req.headers.cookie || '';
+  const cookies = {};
+
+  header.split(';').forEach((part) => {
+    const index = part.indexOf('=');
+
+    if (index === -1) {
+      return;
+    }
+
+    const key = part.slice(0, index).trim();
+    const value = part.slice(index + 1).trim();
+
+    cookies[key] = decodeURIComponent(value);
+  });
+
+  return cookies;
+}
+
+function getSession(req) {
+  const cookies = getCookies(req);
+  const token = cookies.session;
+
+  if (!token) {
+    return null;
+  }
+
+  const session = sessions.get(token);
+
+  if (!session) {
+    return null;
+  }
+
+  if (Date.now() > session.expiresAt) {
+    sessions.delete(token);
+    return null;
+  }
+
+  return session;
+}
+
+function getCurrentUser(req) {
+  const session = getSession(req);
+
+  if (!session) {
+    return null;
+  }
+
+  return users.find((user) => user.id === session.userId) || null;
+}
+
+function setSessionCookie(res, token) {
+  res.setHeader(
+    'Set-Cookie',
+    `session=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${Math.floor(
+      SESSION_TTL / 1000
+    )}`
+  );
+}
+
+function clearSessionCookie(res) {
+  res.setHeader(
+    'Set-Cookie',
+    'session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0'
+  );
 }
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
 
-    req.on('data', chunk => {
-      body += chunk.toString();
+    req.on('data', (chunk) => {
+      body += chunk;
 
       if (body.length > 1024 * 1024) {
-        reject(new Error('Payload muito grande.'));
+        reject(new Error('Corpo da requisição muito grande.'));
         req.destroy();
       }
     });
@@ -126,70 +195,13 @@ function readBody(req) {
 
       try {
         resolve(JSON.parse(body));
-      } catch {
+      } catch (error) {
         reject(new Error('JSON inválido.'));
       }
     });
 
     req.on('error', reject);
   });
-}
-
-function generateToken() {
-  return crypto.randomBytes(32).toString('hex');
-}
-
-function createSession(user) {
-  const token = generateToken();
-
-  sessions.set(token, {
-    userId: user.id,
-    createdAt: Date.now()
-  });
-
-  return token;
-}
-
-function getSessionToken(req) {
-  const header = req.headers.authorization || '';
-
-  if (header.startsWith('Bearer ')) {
-    return header.slice(7).trim();
-  }
-
-  return null;
-}
-
-function getCurrentUser(req) {
-  const token = getSessionToken(req);
-
-  if (!token) {
-    return null;
-  }
-
-  const session = sessions.get(token);
-
-  if (!session) {
-    return null;
-  }
-
-  if (Date.now() - session.createdAt > SESSION_TTL) {
-    sessions.delete(token);
-    return null;
-  }
-
-  return users.find(user => user.id === session.userId) || null;
-}
-
-function requireUser(req, res) {
-  const user = getCurrentUser(req);
-
-  if (!user) {
-    unauthorized(res);
-    return null;
-  }
-
-  return user;
 }
 
 function agentAuthorized(req) {
@@ -202,52 +214,39 @@ function agentAuthorized(req) {
   return Boolean(key && key === STREAM_AGENT_KEY);
 }
 
-function sanitizeUser(user) {
-  if (!user) {
-    return null;
-  }
-
-  return {
-    id: user.id,
-    username: user.username,
-    email: user.email,
-    minutes: user.minutes,
-    isAdmin: Boolean(user.isAdmin)
-  };
-}
-
-function logRequest(req) {
-  console.log(
-    `${new Date().toISOString()} ${req.method} ${req.url}`
-  );
-}
-
 /*
- * SERVIDOR
+ * ==============================
+ * SERVIDOR HTTP
+ * ==============================
  */
 
 const server = http.createServer(async (req, res) => {
-  logRequest(req);
-
-  if (req.method === 'OPTIONS') {
-    res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers':
-        'Content-Type, Authorization, X-Stream-Agent-Key',
-      'Access-Control-Allow-Methods':
-        'GET, POST, PUT, DELETE, OPTIONS'
-    });
-
-    res.end();
-    return;
-  }
-
-  const url = new URL(
+  const parsedUrl = new URL(
     req.url,
     `http://${req.headers.host || 'localhost'}`
   );
 
-  const pathname = url.pathname;
+  const pathname = parsedUrl.pathname;
+  const method = req.method;
+
+  /*
+   * ==============================
+   * API
+   * ==============================
+   */
+
+  if (
+    method === 'GET' &&
+    pathname === '/api/health'
+  ) {
+    json(res, 200, {
+      ok: true,
+      service: 'Império GameCloud',
+      version: '4.1.0'
+    });
+
+    return;
+  }
 
   /*
    * ==============================
@@ -256,18 +255,24 @@ const server = http.createServer(async (req, res) => {
    */
 
   if (
-    req.method === 'POST' &&
+    method === 'POST' &&
     pathname === '/api/login'
   ) {
     try {
       const body = await readBody(req);
 
-      const username = String(body.username || '').trim();
-      const password = String(body.password || '');
+      const username = String(
+        body.username || ''
+      ).trim();
+
+      const password = String(
+        body.password || ''
+      );
 
       const user = users.find(
-        item =>
-          item.username.toLowerCase() === username.toLowerCase() &&
+        (item) =>
+          item.username.toLowerCase() ===
+            username.toLowerCase() &&
           item.password === password
       );
 
@@ -280,18 +285,29 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      const token = createSession(user);
+      const token = createToken();
+
+      sessions.set(token, {
+        userId: user.id,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + SESSION_TTL
+      });
+
+      setSessionCookie(res, token);
 
       json(res, 200, {
         ok: true,
-        token,
-        user: sanitizeUser(user)
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          minutes: user.minutes
+        }
       });
 
       return;
     } catch (error) {
-      console.error('Erro no login:', error);
-      badRequest(res);
+      serverError(res, 'Erro ao realizar login.');
       return;
     }
   }
@@ -303,7 +319,7 @@ const server = http.createServer(async (req, res) => {
    */
 
   if (
-    req.method === 'GET' &&
+    method === 'GET' &&
     pathname === '/api/me'
   ) {
     const user = getCurrentUser(req);
@@ -315,7 +331,12 @@ const server = http.createServer(async (req, res) => {
 
     json(res, 200, {
       ok: true,
-      user: sanitizeUser(user)
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        minutes: user.minutes
+      }
     });
 
     return;
@@ -328,14 +349,16 @@ const server = http.createServer(async (req, res) => {
    */
 
   if (
-    req.method === 'POST' &&
+    method === 'POST' &&
     pathname === '/api/logout'
   ) {
-    const token = getSessionToken(req);
+    const cookies = getCookies(req);
 
-    if (token) {
-      sessions.delete(token);
+    if (cookies.session) {
+      sessions.delete(cookies.session);
     }
+
+    clearSessionCookie(res);
 
     json(res, 200, {
       ok: true
@@ -346,113 +369,134 @@ const server = http.createServer(async (req, res) => {
 
   /*
    * ==============================
-   * ESQUECI MINHA SENHA
+   * ESQUECI A SENHA
    * ==============================
    */
 
   if (
-    req.method === 'POST' &&
+    method === 'POST' &&
     pathname === '/api/forgot-password'
   ) {
     try {
       const body = await readBody(req);
 
-      const email = String(body.email || '')
-        .trim()
-        .toLowerCase();
+      const email = String(
+        body.email || ''
+      ).trim().toLowerCase();
 
       const user = users.find(
-        item => item.email.toLowerCase() === email
+        (item) =>
+          item.email.toLowerCase() === email
       );
 
       /*
-       * Por segurança, não revelamos se o e-mail existe.
+       * Por segurança, não informamos se o
+       * e-mail existe ou não.
        */
-      if (!user) {
-        json(res, 200, {
-          ok: true,
-          message:
-            'Se o e-mail estiver cadastrado, as instruções serão enviadas.'
+
+      if (user) {
+        const token = createToken();
+
+        resetTokens.set(token, {
+          userId: user.id,
+          expiresAt: Date.now() + RESET_TTL
         });
 
-        return;
+        console.log(
+          `Token de redefinição criado para ${user.email}: ${token}`
+        );
       }
-
-      const token = generateToken();
-
-      resetTokens.set(token, {
-        userId: user.id,
-        createdAt: Date.now()
-      });
-
-      console.log(
-        `Token de recuperação criado para ${user.email}: ${token}`
-      );
 
       json(res, 200, {
         ok: true,
         message:
-          'Solicitação de recuperação criada.',
-        token
+          'Se o e-mail estiver cadastrado, as instruções de recuperação foram geradas.'
       });
 
       return;
     } catch (error) {
-      console.error('Erro em forgot-password:', error);
-      badRequest(res);
+      serverError(
+        res,
+        'Erro ao processar recuperação de senha.'
+      );
+
       return;
     }
   }
 
   /*
    * ==============================
-   * RESET DE SENHA
+   * RESETAR SENHA
    * ==============================
    */
 
   if (
-    req.method === 'POST' &&
+    method === 'POST' &&
     pathname === '/api/reset-password'
   ) {
     try {
       const body = await readBody(req);
 
-      const token = String(body.token || '');
-      const password = String(body.password || '');
+      const token = String(
+        body.token || ''
+      ).trim();
+
+      const password = String(
+        body.password || ''
+      );
 
       if (!token || !password) {
-        badRequest(res, 'Token e senha são obrigatórios.');
-        return;
-      }
-
-      if (password.length < 6) {
         badRequest(
           res,
-          'A senha deve possuir pelo menos 6 caracteres.'
+          'Token e nova senha são obrigatórios.'
         );
+
         return;
       }
 
       const reset = resetTokens.get(token);
 
       if (!reset) {
-        badRequest(res, 'Token inválido ou expirado.');
+        json(res, 400, {
+          ok: false,
+          error: 'Token inválido ou expirado.'
+        });
+
         return;
       }
 
-      if (Date.now() - reset.createdAt > RESET_TTL) {
+      if (Date.now() > reset.expiresAt) {
         resetTokens.delete(token);
 
-        badRequest(res, 'Token expirado.');
+        json(res, 400, {
+          ok: false,
+          error: 'Token expirado.'
+        });
+
+        return;
+      }
+
+      if (password.length < 6) {
+        badRequest(
+          res,
+          'A senha deve ter pelo menos 6 caracteres.'
+        );
+
         return;
       }
 
       const user = users.find(
-        item => item.id === reset.userId
+        (item) => item.id === reset.userId
       );
 
       if (!user) {
-        badRequest(res, 'Usuário não encontrado.');
+        resetTokens.delete(token);
+
+        json(res, 400, {
+          ok: false,
+          error: 'Usuário não encontrado.'
+        });
+
         return;
       }
 
@@ -467,8 +511,11 @@ const server = http.createServer(async (req, res) => {
 
       return;
     } catch (error) {
-      console.error('Erro em reset-password:', error);
-      badRequest(res);
+      serverError(
+        res,
+        'Erro ao redefinir senha.'
+      );
+
       return;
     }
   }
@@ -480,7 +527,7 @@ const server = http.createServer(async (req, res) => {
    */
 
   if (
-    req.method === 'GET' &&
+    method === 'GET' &&
     pathname === '/api/stream/status'
   ) {
     json(res, 200, {
@@ -493,24 +540,26 @@ const server = http.createServer(async (req, res) => {
 
   /*
    * ==============================
-   * INICIAR FIVEM PELO USUÁRIO
+   * INICIAR FIVEM
    * ==============================
    */
 
   if (
-    req.method === 'POST' &&
+    method === 'POST' &&
     pathname === '/api/stream/start'
   ) {
-    const user = requireUser(req, res);
+    const user = getCurrentUser(req);
 
     if (!user) {
+      unauthorized(res);
       return;
     }
 
     if (!streaming.enabled) {
       json(res, 400, {
         ok: false,
-        error: 'O streaming está desativado pelo administrador.'
+        error:
+          'O streaming está desativado pelo administrador.'
       });
 
       return;
@@ -519,28 +568,22 @@ const server = http.createServer(async (req, res) => {
     if (streaming.status !== 'online') {
       json(res, 400, {
         ok: false,
-        error: 'O PC de streaming está offline.'
+        error:
+          'O PC de streaming está offline.'
       });
 
       return;
     }
 
-    if (Number(user.minutes) <= 0) {
+    if (user.minutes <= 0) {
       json(res, 400, {
         ok: false,
-        error: 'Você não possui minutos disponíveis.'
+        error:
+          'Você não possui tempo disponível.'
       });
 
       return;
     }
-
-    /*
-     * COLOCA O COMANDO NA FILA.
-     *
-     * O agente do PC vai consultar
-     * GET /api/agent/command
-     * e retirar este comando.
-     */
 
     agentCommands.push({
       command: 'start_fivem',
@@ -548,15 +591,10 @@ const server = http.createServer(async (req, res) => {
       userId: user.id
     });
 
-    console.log(
-      'Comando start_fivem colocado na fila.'
-    );
-
     json(res, 200, {
       ok: true,
-      message: 'Solicitação de início enviada.',
-      game: streaming.game,
-      host: streaming.host
+      message:
+        'Comando para iniciar o FiveM enviado ao PC de streaming.'
     });
 
     return;
@@ -569,14 +607,19 @@ const server = http.createServer(async (req, res) => {
    */
 
   if (
-    req.method === 'POST' &&
+    method === 'POST' &&
     pathname === '/api/admin/login'
   ) {
     try {
       const body = await readBody(req);
 
-      const username = String(body.username || '');
-      const password = String(body.password || '');
+      const username = String(
+        body.username || ''
+      ).trim();
+
+      const password = String(
+        body.password || ''
+      );
 
       if (
         username !== ADMIN_USER ||
@@ -584,59 +627,71 @@ const server = http.createServer(async (req, res) => {
       ) {
         json(res, 401, {
           ok: false,
-          error: 'Credenciais administrativas inválidas.'
+          error: 'Login de administrador inválido.'
         });
 
         return;
       }
 
-      const token = generateToken();
+      const token = createToken();
 
       sessions.set(`admin:${token}`, {
-        userId: 'admin',
+        admin: true,
         createdAt: Date.now(),
-        admin: true
+        expiresAt: Date.now() + SESSION_TTL
       });
+
+      res.setHeader(
+        'Set-Cookie',
+        `admin_session=${encodeURIComponent(
+          token
+        )}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${Math.floor(
+          SESSION_TTL / 1000
+        )}`
+      );
 
       json(res, 200, {
         ok: true,
-        token,
         admin: true
       });
 
       return;
     } catch (error) {
-      console.error('Erro no login admin:', error);
-      badRequest(res);
+      serverError(
+        res,
+        'Erro no login administrativo.'
+      );
+
       return;
     }
   }
 
   /*
    * ==============================
-   * FUNÇÃO DE AUTENTICAÇÃO ADMIN
+   * VERIFICA ADMIN
    * ==============================
    */
 
-  function isAdmin(req) {
-    const token = getSessionToken(req);
+  function getAdminSession(request) {
+    const cookies = getCookies(request);
+    const token = cookies.admin_session;
 
     if (!token) {
-      return false;
+      return null;
     }
 
     const session = sessions.get(`admin:${token}`);
 
     if (!session) {
-      return false;
+      return null;
     }
 
-    if (Date.now() - session.createdAt > SESSION_TTL) {
+    if (Date.now() > session.expiresAt) {
       sessions.delete(`admin:${token}`);
-      return false;
+      return null;
     }
 
-    return session.admin === true;
+    return session;
   }
 
   /*
@@ -646,10 +701,12 @@ const server = http.createServer(async (req, res) => {
    */
 
   if (
-    req.method === 'GET' &&
-    pathname === '/api/admin/stream/status'
+    method === 'GET' &&
+    pathname === '/api/admin/stream'
   ) {
-    if (!isAdmin(req)) {
+    const admin = getAdminSession(req);
+
+    if (!admin) {
       unauthorized(res);
       return;
     }
@@ -664,15 +721,17 @@ const server = http.createServer(async (req, res) => {
 
   /*
    * ==============================
-   * ADMIN ATIVA/DESATIVA STREAMING
+   * ALTERAR STREAMING
    * ==============================
    */
 
   if (
-    req.method === 'POST' &&
-    pathname === '/api/admin/stream/toggle'
+    method === 'POST' &&
+    pathname === '/api/admin/stream'
   ) {
-    if (!isAdmin(req)) {
+    const admin = getAdminSession(req);
+
+    if (!admin) {
       unauthorized(res);
       return;
     }
@@ -680,12 +739,26 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await readBody(req);
 
-      streaming.enabled = Boolean(body.enabled);
+      if (
+        typeof body.enabled === 'boolean'
+      ) {
+        streaming.enabled = body.enabled;
+      }
 
-      if (!streaming.enabled) {
-        streaming.status = 'offline';
-        streaming.message =
-          'Streaming desativado pelo administrador.';
+      if (typeof body.status === 'string') {
+        streaming.status = body.status;
+      }
+
+      if (typeof body.game === 'string') {
+        streaming.game = body.game;
+      }
+
+      if (typeof body.host === 'string') {
+        streaming.host = body.host;
+      }
+
+      if (typeof body.message === 'string') {
+        streaming.message = body.message;
       }
 
       json(res, 200, {
@@ -695,76 +768,23 @@ const server = http.createServer(async (req, res) => {
 
       return;
     } catch (error) {
-      console.error('Erro ao alterar streaming:', error);
-      badRequest(res);
+      serverError(
+        res,
+        'Erro ao atualizar o streaming.'
+      );
+
       return;
     }
   }
 
   /*
    * ==============================
-   * ADMIN INICIA STREAMING
+   * HEARTBEAT DO AGENTE
    * ==============================
    */
 
   if (
-    req.method === 'POST' &&
-    pathname === '/api/admin/stream/start'
-  ) {
-    if (!isAdmin(req)) {
-      unauthorized(res);
-      return;
-    }
-
-    streaming.enabled = true;
-    streaming.status = 'online';
-    streaming.game = 'FiveM';
-    streaming.message =
-      'PC de streaming online.';
-
-    json(res, 200, {
-      ok: true,
-      streaming
-    });
-
-    return;
-  }
-
-  /*
-   * ==============================
-   * ADMIN PARA STREAMING
-   * ==============================
-   */
-
-  if (
-    req.method === 'POST' &&
-    pathname === '/api/admin/stream/stop'
-  ) {
-    if (!isAdmin(req)) {
-      unauthorized(res);
-      return;
-    }
-
-    streaming.status = 'offline';
-    streaming.message =
-      'Streaming parado pelo administrador.';
-
-    json(res, 200, {
-      ok: true,
-      streaming
-    });
-
-    return;
-  }
-
-  /*
-   * ==============================
-   * AGENTE - HEARTBEAT
-   * ==============================
-   */
-
-  if (
-    req.method === 'POST' &&
+    method === 'POST' &&
     pathname === '/api/agent/heartbeat'
   ) {
     if (!agentAuthorized(req)) {
@@ -776,9 +796,7 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
 
       streaming.status =
-        body.status === 'offline'
-          ? 'offline'
-          : 'online';
+        body.status || 'online';
 
       streaming.game =
         body.game || 'FiveM';
@@ -788,11 +806,12 @@ const server = http.createServer(async (req, res) => {
         req.headers.host ||
         'PC-GAMECLOUD';
 
-      streaming.lastHeartbeat = new Date().toISOString();
-
       streaming.message =
         body.message ||
-        'PC de streaming conectado.';
+        'PC de streaming online.';
+
+      streaming.lastHeartbeat =
+        new Date().toISOString();
 
       json(res, 200, {
         ok: true,
@@ -801,36 +820,31 @@ const server = http.createServer(async (req, res) => {
 
       return;
     } catch (error) {
-      console.error('Erro no heartbeat:', error);
-      badRequest(res);
+      serverError(
+        res,
+        'Erro no heartbeat.'
+      );
+
       return;
     }
   }
 
   /*
    * ==============================
-   * AGENTE - BUSCAR COMANDO
+   * COMANDO PARA O AGENTE
    * ==============================
    *
-   * IMPORTANTE:
-   * O PowerShell usa GET aqui.
+   * O agente consulta esta rota usando GET.
    */
 
   if (
-    req.method === 'GET' &&
+    method === 'GET' &&
     pathname === '/api/agent/command'
   ) {
     if (!agentAuthorized(req)) {
       unauthorized(res);
       return;
     }
-
-    /*
-     * Retira o primeiro comando da fila.
-     *
-     * Se não houver comando:
-     * command = null
-     */
 
     const command =
       agentCommands.shift() || null;
@@ -856,14 +870,12 @@ const server = http.createServer(async (req, res) => {
 
   /*
    * ==============================
-   * AGENTE - STATUS
+   * STATUS DO AGENTE
    * ==============================
-   *
-   * Mantemos GET para consulta do status.
    */
 
   if (
-    req.method === 'GET' &&
+    method === 'GET' &&
     pathname === '/api/agent/status'
   ) {
     if (!agentAuthorized(req)) {
@@ -881,15 +893,12 @@ const server = http.createServer(async (req, res) => {
 
   /*
    * ==============================
-   * AGENTE - COMANDO MANUAL
+   * COMANDO DIRETO DO AGENTE
    * ==============================
-   *
-   * Mantém POST para compatibilidade
-   * com chamadas administrativas/testes.
    */
 
   if (
-    req.method === 'POST' &&
+    method === 'POST' &&
     pathname === '/api/agent/command'
   ) {
     if (!agentAuthorized(req)) {
@@ -900,30 +909,33 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await readBody(req);
 
-      const command = String(body.command || '').trim();
+      if (!body.command) {
+        badRequest(
+          res,
+          'Comando não informado.'
+        );
 
-      if (!command) {
-        badRequest(res, 'Comando não informado.');
         return;
       }
 
-      console.log(
-        `Comando recebido do agente: ${command}`
-      );
+      agentCommands.push({
+        command: String(body.command),
+        createdAt: Date.now(),
+        userId: body.userId || null
+      });
 
       json(res, 200, {
         ok: true,
-        command
+        message: 'Comando adicionado à fila.'
       });
 
       return;
     } catch (error) {
-      console.error(
-        'Erro no comando do agente:',
-        error
+      serverError(
+        res,
+        'Erro ao adicionar comando.'
       );
 
-      badRequest(res);
       return;
     }
   }
@@ -939,148 +951,171 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/') {
     filePath = path.join(
       __dirname,
-      'frontend',
       'index.html'
-    );
-  } else if (
-    pathname === '/index.html'
-  ) {
-    filePath = path.join(
-      __dirname,
-      'frontend',
-      'index.html'
-    );
-  } else if (
-    pathname === '/app.js'
-  ) {
-    filePath = path.join(
-      __dirname,
-      'frontend',
-      'app.js'
-    );
-  } else if (
-    pathname === '/style.css'
-  ) {
-    filePath = path.join(
-      __dirname,
-      'frontend',
-      'style.css'
-    );
-  } else if (
-    pathname === '/styles.css'
-  ) {
-    filePath = path.join(
-      __dirname,
-      'frontend',
-      'styles.css'
     );
   } else {
     filePath = path.join(
       __dirname,
-      'frontend',
       pathname.replace(/^\/+/, '')
     );
   }
 
   /*
-   * Evita acesso a arquivos fora da pasta frontend.
+   * Evita acesso a arquivos fora
+   * da pasta do projeto.
    */
 
-  const frontendRoot = path.resolve(
-    path.join(__dirname, 'frontend')
-  );
+  const projectRoot =
+    path.resolve(__dirname);
 
-  const resolvedFile = path.resolve(filePath);
+  const resolvedFile =
+    path.resolve(filePath);
 
   if (
-    !resolvedFile.startsWith(frontendRoot)
+    resolvedFile !== projectRoot &&
+    !resolvedFile.startsWith(
+      projectRoot + path.sep
+    )
   ) {
     notFound(res);
     return;
   }
 
-  fs.stat(resolvedFile, (error, stats) => {
-    if (error || !stats.isFile()) {
-      notFound(res);
-      return;
-    }
-
-    const ext = path.extname(resolvedFile).toLowerCase();
-
-    const contentTypes = {
-      '.html': 'text/html; charset=utf-8',
-      '.js': 'application/javascript; charset=utf-8',
-      '.css': 'text/css; charset=utf-8',
-      '.json': 'application/json; charset=utf-8',
-      '.png': 'image/png',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.svg': 'image/svg+xml',
-      '.ico': 'image/x-icon'
-    };
-
-    const contentType =
-      contentTypes[ext] ||
-      'application/octet-stream';
-
-    fs.readFile(resolvedFile, (readError, data) => {
-      if (readError) {
-        text(
-          res,
-          500,
-          'Erro ao carregar arquivo.'
-        );
-
+  fs.stat(
+    resolvedFile,
+    (error, stats) => {
+      if (
+        error ||
+        !stats.isFile()
+      ) {
+        notFound(res);
         return;
       }
 
-      res.writeHead(200, {
-        'Content-Type': contentType,
-        'Cache-Control': 'no-cache'
-      });
+      const ext =
+        path.extname(
+          resolvedFile
+        ).toLowerCase();
 
-      res.end(data);
-    });
-  });
+      const contentTypes = {
+        '.html':
+          'text/html; charset=utf-8',
+
+        '.js':
+          'application/javascript; charset=utf-8',
+
+        '.css':
+          'text/css; charset=utf-8',
+
+        '.json':
+          'application/json; charset=utf-8',
+
+        '.png':
+          'image/png',
+
+        '.jpg':
+          'image/jpeg',
+
+        '.jpeg':
+          'image/jpeg',
+
+        '.svg':
+          'image/svg+xml',
+
+        '.ico':
+          'image/x-icon'
+      };
+
+      const contentType =
+        contentTypes[ext] ||
+        'application/octet-stream';
+
+      fs.readFile(
+        resolvedFile,
+        (readError, data) => {
+          if (readError) {
+            text(
+              res,
+              500,
+              'Erro ao carregar arquivo.'
+            );
+
+            return;
+          }
+
+          res.writeHead(200, {
+            'Content-Type':
+              contentType,
+
+            'Cache-Control':
+              'no-cache'
+          });
+
+          res.end(data);
+        }
+      );
+    }
+  );
 });
 
 /*
+ * ==============================
  * LIMPEZA DE SESSÕES EXPIRADAS
+ * ==============================
  */
 
 setInterval(() => {
   const now = Date.now();
 
-  for (const [token, session] of sessions.entries()) {
-    if (now - session.createdAt > SESSION_TTL) {
+  for (
+    const [
+      token,
+      session
+    ] of sessions.entries()
+  ) {
+    if (now > session.expiresAt) {
       sessions.delete(token);
     }
   }
 
-  for (const [token, reset] of resetTokens.entries()) {
-    if (now - reset.createdAt > RESET_TTL) {
+  for (
+    const [
+      token,
+      reset
+    ] of resetTokens.entries()
+  ) {
+    if (now > reset.expiresAt) {
       resetTokens.delete(token);
     }
   }
-}, 60 * 1000);
+}, 1000 * 60 * 10);
 
 /*
- * INICIALIZAÇÃO
+ * ==============================
+ * INICIAR SERVIDOR
+ * ==============================
  */
 
 server.listen(PORT, () => {
-  console.log('=================================');
-  console.log(' IMPÉRIO GAMECLOUD 4.1.0');
-  console.log('=================================');
-  console.log(`Porta: ${PORT}`);
   console.log(
-    `STREAM_AGENT_KEY configurada: ${Boolean(STREAM_AGENT_KEY)}`
+    `Império GameCloud 4.1.0 rodando na porta ${PORT}`
   );
+
   console.log(
-    `ADMIN_PASSWORD configurada: ${Boolean(ADMIN_PASSWORD)}`
+    `STREAM_AGENT_KEY configurada: ${Boolean(
+      STREAM_AGENT_KEY
+    )}`
   );
+
   console.log(
-    `ADMIN_USER configurado: ${Boolean(ADMIN_USER)}`
+    `ADMIN_PASSWORD configurada: ${Boolean(
+      ADMIN_PASSWORD
+    )}`
   );
-  console.log('=================================');
+
+  console.log(
+    `ADMIN_USER configurado: ${Boolean(
+      ADMIN_USER
+    )}`
+  );
 });
