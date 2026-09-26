@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#03060d">
+  <meta name="theme-color" content="#050b14">
   <title>Império GameCloud</title>
 
   <style>
@@ -11,50 +11,87 @@
       box-sizing: border-box;
     }
 
+    :root {
+      --bg: #03070d;
+      --panel: #091321;
+      --panel-2: #0d1b2b;
+      --line: #1d3852;
+      --text: #f1f6ff;
+      --muted: #9eb0c2;
+      --accent: #eaff00;
+      --green: #29e878;
+      --red: #ff5368;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
     body {
       margin: 0;
-      background:
-        radial-gradient(circle at top, #10233a 0, #03060d 42%);
-      color: #edf4ff;
-      font: 16px Arial, sans-serif;
       min-height: 100vh;
+      background:
+        radial-gradient(
+          circle at 50% -10%,
+          #18314d 0,
+          transparent 38%
+        ),
+        linear-gradient(
+          180deg,
+          #050b14 0%,
+          #02050a 100%
+        );
+      color: var(--text);
+      font-family: Arial, sans-serif;
     }
 
-    .wrap {
-      max-width: 1000px;
-      margin: auto;
-      padding: 20px 16px 90px;
+    button,
+    input {
+      font: inherit;
     }
 
-    header {
-      position: sticky;
-      top: 0;
-      z-index: 10;
-      padding: 18px;
-      background: rgba(8, 19, 34, .96);
-      border-bottom: 1px solid #28465b;
+    button {
+      border: 1px solid var(--line);
+      background: #11243a;
+      color: var(--text);
+      border-radius: 12px;
+      padding: 13px 16px;
+      cursor: pointer;
+      transition: .15s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      border-color: #557693;
+    }
+
+    button:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    button.primary {
+      background: var(--accent);
+      color: #071000;
+      border-color: var(--accent);
       font-weight: 900;
-      font-size: 19px;
-      backdrop-filter: blur(8px);
     }
 
-    header b,
-    .accent {
-      color: #eaff00;
+    button.green {
+      background: #10b957;
+      border-color: var(--green);
+      color: white;
+      font-weight: 900;
     }
 
-    .card {
-      background: rgba(11, 25, 40, .94);
-      border: 1px solid #24445e;
-      border-radius: 16px;
-      padding: 20px;
-      margin: 14px 0;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, .18);
+    button.danger {
+      background: #32151d;
+      border-color: #713441;
     }
 
-    .auth {
-      max-width: 440px;
-      margin: 7vh auto;
+    .wide {
+      width: 100%;
     }
 
     .page {
@@ -65,80 +102,54 @@
       display: block;
     }
 
-    h1 {
-      margin-top: 0;
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(4, 10, 18, .94);
+      border-bottom: 1px solid #19334a;
+      backdrop-filter: blur(14px);
     }
 
-    h2 {
-      margin-top: 0;
-    }
-
-    input,
-    button {
-      font: inherit;
-      border-radius: 10px;
-      padding: 13px;
-      margin: 6px 0;
-    }
-
-    input:not([type="checkbox"]) {
-      width: 100%;
-      border: 1px solid #31516b;
-      background: #050e19;
-      color: white;
-      outline: none;
-    }
-
-    input:not([type="checkbox"]):focus {
-      border-color: #eaff00;
-      box-shadow: 0 0 0 2px rgba(234, 255, 0, .12);
-    }
-
-    button {
-      border: 1px solid #35516b;
-      background: #142b41;
-      color: white;
-      cursor: pointer;
-      transition: .15s ease;
-    }
-
-    button:hover {
-      transform: translateY(-1px);
-      border-color: #5f829d;
-    }
-
-    button.primary {
-      background: #eaff00;
-      color: #081000;
-      font-weight: 800;
-      border: 0;
-    }
-
-    button.danger {
-      background: #3a1820;
-      border-color: #713a44;
-    }
-
-    button:disabled {
-      opacity: .55;
-      cursor: not-allowed;
-      transform: none;
-    }
-
-    .wide {
-      width: 100%;
-    }
-
-    .row {
+    .topbar {
+      max-width: 1180px;
+      margin: auto;
+      padding: 15px 18px;
       display: flex;
       align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 12px;
     }
 
-    .muted {
-      color: #afc0d0;
-      font-size: 14px;
+    .brand {
+      font-size: 19px;
+      font-weight: 950;
+      letter-spacing: -.4px;
+    }
+
+    .brand span {
+      color: var(--accent);
+    }
+
+    .brand small {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 10px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+    }
+
+    .wrap {
+      max-width: 1180px;
+      margin: auto;
+      padding: 18px 14px 80px;
+    }
+
+    #message {
+      min-height: 22px;
+      margin: 5px 0 10px;
+      font-weight: 800;
     }
 
     .error {
@@ -146,182 +157,541 @@
     }
 
     .success {
-      color: #74f3a2;
+      color: #6ff3a1;
     }
 
-    #message {
-      min-height: 22px;
-      font-weight: 700;
+    .auth {
+      max-width: 460px;
+      margin: 8vh auto;
     }
 
-    .grid {
+    .card {
+      background:
+        linear-gradient(
+          145deg,
+          rgba(13,29,46,.97),
+          rgba(6,15,26,.97)
+        );
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 20px;
+      margin: 14px 0;
+      box-shadow: 0 18px 45px rgba(0,0,0,.24);
+    }
+
+    .auth h1,
+    .auth h2 {
+      margin-top: 0;
+    }
+
+    input:not([type="checkbox"]) {
+      width: 100%;
+      padding: 14px;
+      margin: 6px 0;
+      border: 1px solid #294964;
+      border-radius: 12px;
+      outline: none;
+      background: #040b14;
+      color: white;
+    }
+
+    input:not([type="checkbox"]):focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(234,255,0,.1);
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      margin: 8px 0;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .user-shell {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      grid-template-columns: 220px minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 82px;
+      background: rgba(7,16,27,.96);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 12px;
+    }
+
+    .side-user {
+      padding: 13px;
+      border-radius: 14px;
+      background:
+        linear-gradient(
+          145deg,
+          #12263a,
+          #08121e
+        );
+      margin-bottom: 10px;
+    }
+
+    .side-user strong {
+      display: block;
+      font-size: 17px;
+    }
+
+    .side-user small {
+      color: var(--muted);
+    }
+
+    .side-btn {
+      width: 100%;
+      text-align: left;
+      margin: 4px 0;
+      background: transparent;
+      border-color: transparent;
+    }
+
+    .side-btn.active {
+      background: rgba(234,255,0,.1);
+      border-color: #65720e;
+      color: var(--accent);
+      font-weight: 900;
+    }
+
+    .side-logout {
+      width: 100%;
+      margin-top: 8px;
+      background: #27151b;
+      border-color: #663440;
+    }
+
+    .dashboard-head {
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 22px;
+      background:
+        radial-gradient(
+          circle at 85% 20%,
+          rgba(234,255,0,.11),
+          transparent 28%
+        ),
+        linear-gradient(
+          135deg,
+          #10243a,
+          #07111e 65%
+        );
+    }
+
+    .dashboard-head h1 {
+      margin: 0 0 7px;
+      font-size: clamp(28px, 5vw, 42px);
+    }
+
+    .dashboard-head h1 span {
+      color: var(--accent);
+    }
+
+    .head-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .balance {
+      min-width: 210px;
+      padding: 16px 18px;
+      border-radius: 16px;
+      background: #07131e;
+      border: 1px solid #3c571e;
+    }
+
+    .balance small {
+      color: var(--muted);
+    }
+
+    .balance strong {
+      display: block;
+      color: var(--accent);
+      font-size: 30px;
+      margin-top: 4px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
       gap: 12px;
+      margin-top: 12px;
     }
 
     .stat {
-      background: linear-gradient(145deg, #10283b, #0b1b2c);
-      border: 1px solid #294b64;
-      padding: 20px;
-      border-radius: 14px;
+      padding: 18px;
+      border-radius: 16px;
+      background:
+        linear-gradient(
+          145deg,
+          #0e2337,
+          #091522
+        );
+      border: 1px solid var(--line);
+    }
+
+    .stat-icon {
+      font-size: 26px;
+    }
+
+    .stat small {
+      display: block;
+      color: var(--muted);
+      margin-top: 8px;
     }
 
     .stat strong {
       display: block;
-      font-size: 30px;
-      margin-top: 9px;
-      color: #eaff00;
+      font-size: 23px;
+      margin-top: 5px;
+    }
+        .status-online {
+      color: var(--green);
+    }
+
+    .status-offline {
+      color: #ff7180;
+    }
+
+    .section-title {
+      margin: 22px 0 10px;
+      font-size: 22px;
+    }
+
+    .server-card {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .server-card::after {
+      content: "";
+      position: absolute;
+      width: 150px;
+      height: 150px;
+      right: -70px;
+      top: -70px;
+      border-radius: 50%;
+      background: rgba(234,255,0,.07);
+    }
+
+    .server-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .server-name {
+      font-size: 21px;
+      font-weight: 900;
+    }
+
+    .online-dot {
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--green);
+      margin-right: 6px;
+      box-shadow: 0 0 12px rgba(41,232,120,.7);
+    }
+
+    .server-info {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin: 15px 0;
+    }
+
+    .server-info div {
+      background: #07111d;
+      border: 1px solid #1b344c;
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .server-info small {
+      display: block;
+      color: var(--muted);
+      margin-bottom: 5px;
+    }
+
+    .server-info strong {
+      font-size: 15px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 9px;
+      flex-wrap: wrap;
+    }
+
+    .buy-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .package {
+      position: relative;
+      border: 1px solid var(--line);
+      background: #091522;
+      border-radius: 17px;
+      padding: 20px;
+    }
+
+    .package.featured {
+      border-color: #788617;
+      box-shadow: 0 0 30px rgba(234,255,0,.08);
+    }
+
+    .package h3 {
+      margin-top: 0;
+      font-size: 21px;
+    }
+
+    .package .minutes-value {
+      color: var(--accent);
+      font-size: 34px;
+      font-weight: 950;
+    }
+
+    .price {
+      font-size: 22px;
+      font-weight: 900;
+      margin: 10px 0;
+    }
+
+    .method {
+      margin: 8px 0;
+      padding: 11px;
+      background: #06101a;
+      border: 1px solid #19344b;
+      border-radius: 11px;
+      color: var(--muted);
     }
 
     .notice {
-      border-left: 4px solid #eaff00;
+      border: 1px dashed #53651b;
+      background: rgba(234,255,0,.05);
+      color: #dfe9c0;
       padding: 14px;
-      background: #202817;
-      border-radius: 8px;
-      margin: 14px 0;
+      border-radius: 13px;
+      margin-top: 12px;
     }
 
-    .nav {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-top: 14px;
-    }
-
-    label {
-      cursor: pointer;
-    }
-
-    .admin-title {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+    .profile-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
       gap: 12px;
-      flex-wrap: wrap;
+    }
+
+    .profile-item {
+      padding: 15px;
+      background: #07111d;
+      border: 1px solid #1b344c;
+      border-radius: 13px;
+    }
+
+    .profile-item small {
+      color: var(--muted);
+      display: block;
+      margin-bottom: 5px;
+    }
+
+    .profile-item strong {
+      word-break: break-word;
+    }
+
+    .support-box {
+      line-height: 1.6;
+    }
+
+    .support-box strong {
+      color: var(--accent);
+    }
+
+    .admin-shell {
+      display: none;
+    }
+
+    .admin-shell.active {
+      display: block;
+    }
+
+    .admin-header {
+      background:
+        radial-gradient(
+          circle at 90% 20%,
+          rgba(255,83,104,.12),
+          transparent 28%
+        ),
+        linear-gradient(
+          135deg,
+          #26121a,
+          #0b1019
+        );
+      border: 1px solid #542634;
+      border-radius: 20px;
+      padding: 22px;
+    }
+
+    .admin-header h1 {
+      margin: 0 0 5px;
     }
 
     .admin-badge {
       display: inline-block;
-      padding: 7px 11px;
+      margin-top: 8px;
+      padding: 6px 10px;
       border-radius: 999px;
-      background: #202817;
-      border: 1px solid #65720e;
-      color: #eaff00;
-      font-size: 13px;
-      font-weight: 800;
+      background: #32151d;
+      border: 1px solid #713441;
+      color: #ff9aa6;
+      font-size: 12px;
+      font-weight: 900;
     }
 
-    .online {
-      color: #74f3a2;
-      font-weight: 800;
+    .admin-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-top: 12px;
     }
 
-    .offline {
-      color: #afc0d0;
-      font-weight: 800;
+    .admin-stat {
+      padding: 17px;
+      border-radius: 15px;
+      background: #0b151f;
+      border: 1px solid #263b4c;
     }
 
-    .starting {
-      color: #eaff00;
-      font-weight: 800;
+    .admin-stat small {
+      color: var(--muted);
+      display: block;
     }
 
-    .table-wrap {
-      overflow-x: auto;
-      border: 1px solid #294259;
-      border-radius: 12px;
+    .admin-stat strong {
+      display: block;
+      margin-top: 5px;
+      font-size: 25px;
     }
 
-    table {
+    .admin-controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .admin-card {
+      background: #0a131e;
+      border: 1px solid #273b4d;
+      border-radius: 17px;
+      padding: 18px;
+    }
+
+    .admin-card h3 {
+      margin-top: 0;
+    }
+
+    .admin-table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 620px;
     }
 
-    td,
-    th {
+    .admin-table th,
+    .admin-table td {
+      padding: 11px 7px;
+      border-bottom: 1px solid #1c3042;
       text-align: left;
-      border-bottom: 1px solid #294259;
-      padding: 12px 10px;
-      word-break: break-word;
     }
 
-    th {
-      background: #10283b;
-      color: #eaff00;
-      font-size: 14px;
+    .admin-table th {
+      color: var(--muted);
+      font-size: 12px;
     }
 
-    tr:last-child td {
-      border-bottom: 0;
+    .footer {
+      text-align: center;
+      color: #64788c;
+      padding: 25px 10px;
+      font-size: 12px;
     }
 
-    .player-count {
-      color: #afc0d0;
-      font-size: 14px;
-      margin-top: -6px;
-    }
-
-    .hero {
-      padding: 24px;
-      border-radius: 18px;
-      background:
-        linear-gradient(
-          135deg,
-          rgba(234, 255, 0, .08),
-          rgba(11, 25, 40, .95)
-        );
-      border: 1px solid #31516b;
-    }
-
-    .hero h1 {
-      margin-bottom: 8px;
-    }
-
-    .logout {
-      border-color: #713a44;
-      background: #2a1820;
-    }
-
-    .stream-status {
-      padding: 16px;
-      border-radius: 12px;
-      background: #081522;
-      border: 1px solid #294b64;
-      margin: 12px 0;
-    }
-
-    .stream-status strong {
-      font-size: 18px;
-    }
-
-    .stream-buttons {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    .stream-buttons button {
-      flex: 1;
-      min-width: 150px;
-    }
-
-    @media (max-width: 600px) {
-      .wrap {
-        padding: 14px 10px 70px;
+    @media (max-width: 900px) {
+      .user-shell {
+        grid-template-columns: 1fr;
       }
 
-      header {
-        padding: 15px;
+      .sidebar {
+        position: static;
+      }
+
+      .stats,
+      .buy-grid,
+      .admin-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .server-info {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .admin-controls,
+      .profile-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .wrap {
+        padding-left: 10px;
+        padding-right: 10px;
+      }
+
+      .stats,
+      .buy-grid,
+      .admin-grid,
+      .server-info {
+        grid-template-columns: 1fr;
+      }
+
+      .dashboard-head {
+        padding: 17px;
       }
 
       .card {
-        padding: 16px;
+        padding: 15px;
       }
 
-      .stat strong {
-        font-size: 26px;
+      .sidebar {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 5px;
+      }
+
+      .side-user,
+      .side-logout {
+        grid-column: 1 / -1;
+      }
+
+      .side-btn {
+        margin: 0;
       }
     }
   </style>
@@ -330,450 +700,964 @@
 <body>
 
   <header>
-    👑 IMPÉRIO <b>GAMECLOUD</b>
+    <div class="topbar">
+      <div class="brand">
+        IMPÉRIO <span>GAMECLOUD</span>
+        <small>Cloud Gaming Platform</small>
+      </div>
+      <div id="headerActions"></div>
+    </div>
   </header>
 
   <main class="wrap">
 
-    <p id="message" role="status" aria-live="polite"></p>
-
     <!-- LOGIN -->
     <section id="login" class="page active">
+      <div class="auth">
 
-      <div class="card auth">
+        <div class="card">
+          <h1>Entrar no GameCloud</h1>
+          <p class="muted">
+            Acesse sua conta para utilizar seu servidor FiveM.
+          </p>
 
-        <h1>Entrar</h1>
+          <div id="message"></div>
 
-        <form id="loginForm">
-
-          <input
-            id="email"
-            type="email"
-            autocomplete="username"
-            placeholder="Seu e-mail"
-            required
-          >
-
-          <input
-            id="password"
-            type="password"
-            autocomplete="current-password"
-            placeholder="Sua senha"
-            required
-          >
-
-          <label class="row">
+          <form id="loginForm">
             <input
-              id="remember"
-              type="checkbox"
-              checked
+              id="email"
+              type="email"
+              placeholder="E-mail"
+              autocomplete="email"
+              required
             >
-            Manter conectado neste aparelho
-          </label>
 
-          <button class="primary wide" type="submit">
-            Entrar
-          </button>
+            <input
+              id="password"
+              type="password"
+              placeholder="Senha"
+              autocomplete="current-password"
+              required
+            >
 
-        </form>
+            <label class="row">
+              <input id="remember" type="checkbox">
+              Lembrar minha sessão
+            </label>
 
-        <button class="wide" data-page="register">
-          Criar conta
-        </button>
+            <button
+              id="loginButton"
+              class="primary wide"
+              type="submit"
+            >
+              Entrar
+            </button>
+          </form>
 
-        <button class="wide" data-page="forgot">
-          Esqueci minha senha
-        </button>
+          <div class="row" style="justify-content:space-between;margin-top:15px">
+            <button id="showRegister" type="button">
+              Criar conta
+            </button>
 
-        <p class="muted">
-          A senha não é salva pelo site. O navegador pode oferecer
-          salvá-la com segurança.
-        </p>
+            <button id="showForgot" type="button">
+              Esqueci minha senha
+            </button>
+          </div>
+        </div>
 
       </div>
-
     </section>
 
     <!-- CADASTRO -->
     <section id="register" class="page">
+      <div class="auth">
 
-      <div class="card auth">
+        <div class="card">
+          <h2>Criar conta</h2>
 
-        <h2>Criar conta</h2>
+          <form id="registerForm">
 
-        <form id="registerForm">
+            <input
+              id="rname"
+              type="text"
+              placeholder="Nome de usuário"
+              required
+            >
 
-          <input
-            id="rname"
-            placeholder="Nome"
-            maxlength="60"
-            required
+            <input
+              id="remail"
+              type="email"
+              placeholder="E-mail"
+              required
+            >
+
+            <input
+              id="rpassword"
+              type="password"
+              placeholder="Senha — mínimo 8 caracteres"
+              minlength="8"
+              required
+            >
+
+            <button class="primary wide" type="submit">
+              Criar minha conta
+            </button>
+
+          </form>
+
+          <button
+            id="backLoginFromRegister"
+            class="wide"
+            type="button"
+            style="margin-top:10px"
           >
-
-          <input
-            id="remail"
-            type="email"
-            autocomplete="email"
-            placeholder="E-mail"
-            required
-          >
-
-          <input
-            id="rpassword"
-            type="password"
-            autocomplete="new-password"
-            minlength="8"
-            placeholder="Senha (mínimo 8 caracteres)"
-            required
-          >
-
-          <button class="primary wide" type="submit">
-            Cadastrar
+            Voltar para login
           </button>
-
-        </form>
-
-        <button class="wide" data-page="login">
-          Voltar
-        </button>
-
-      </div>
-
-    </section>
-
-    <!-- RECUPERAÇÃO -->
-    <section id="forgot" class="page">
-
-      <div class="card auth">
-
-        <h2>Recuperar senha</h2>
-
-        <p class="muted">
-          O envio de e-mail ainda precisa ser configurado pelo administrador.
-        </p>
-
-        <form id="forgotForm">
-
-          <input
-            id="femail"
-            type="email"
-            placeholder="E-mail"
-            required
-          >
-
-          <button class="primary wide" type="submit">
-            Solicitar recuperação
-          </button>
-
-        </form>
-
-        <button class="wide" data-page="login">
-          Voltar
-        </button>
-
-      </div>
-
-    </section>
-
-    <!-- RESET -->
-    <section id="reset" class="page">
-
-      <div class="card auth">
-
-        <h2>Definir nova senha</h2>
-
-        <form id="resetForm">
-
-          <input
-            id="newpassword"
-            type="password"
-            minlength="8"
-            placeholder="Nova senha"
-            required
-          >
-
-          <button class="primary wide" type="submit">
-            Alterar senha
-          </button>
-
-        </form>
-
-      </div>
-
-    </section>
-
-    <!-- ÁREA DO JOGADOR -->
-    <section id="home" class="page">
-
-      <div class="hero">
-
-        <h1 id="greeting">
-          Bem-vindo!
-        </h1>
-
-        <p>
-          Seu tempo disponível:
-          <strong class="accent" id="minutes">
-            0 minutos
-          </strong>
-        </p>
-
-      </div>
-
-      <div class="card">
-
-        <h2>🎮 FiveM na nuvem</h2>
-
-        <div class="stream-status">
-
-          <strong>Status do GameCloud:</strong>
-
-          <div id="playerStreamStatus" class="offline">
-            Verificando...
-          </div>
-
-          <p id="playerStreamMessage" class="muted">
-            Aguarde enquanto verificamos o computador GameCloud.
-          </p>
-
         </div>
 
-        <p class="muted">
-          O streaming do FiveM é realizado pelo computador GameCloud.
-        </p>
-
-        <button
-          id="playerStart"
-          class="primary"
-          type="button"
-        >
-          🎮 Iniciar FiveM
-        </button>
-
       </div>
-
-      <button id="refresh" class="primary" type="button">
-        Atualizar meus dados
-      </button>
-
-      <button class="logout" type="button">
-        Sair da conta
-      </button>
-
     </section>
 
-    <!-- PAINEL ADMIN -->
-    <section id="admin" class="page">
+    <!-- ESQUECI SENHA -->
+    <section id="forgot" class="page">
+      <div class="auth">
 
-      <div class="admin-title">
-
-        <div>
-          <h1>Painel administrativo</h1>
+        <div class="card">
+          <h2>Recuperar senha</h2>
 
           <p class="muted">
-            Controle dos jogadores, tempo e computador GameCloud.
+            Informe o e-mail cadastrado.
           </p>
-        </div>
 
-        <span class="admin-badge">
-          👑 ADMINISTRADOR
-        </span>
+          <form id="forgotForm">
+            <input
+              id="femail"
+              type="email"
+              placeholder="Seu e-mail"
+              required
+            >
+
+            <button class="primary wide" type="submit">
+              Recuperar senha
+            </button>
+          </form>
+
+          <button
+            id="backLoginFromForgot"
+            class="wide"
+            type="button"
+            style="margin-top:10px"
+          >
+            Voltar para login
+          </button>
+        </div>
 
       </div>
+    </section>
+        <!-- RESETAR SENHA -->
+    <section id="reset" class="page">
+      <div class="auth">
 
-      <div class="grid">
+        <div class="card">
+          <h2>Nova senha</h2>
 
-        <div class="stat">
-          👥 Jogadores cadastrados
-          <strong id="users">0</strong>
-        </div>
+          <p class="muted">
+            Digite sua nova senha.
+          </p>
 
-        <div class="stat">
-          🟢 Jogadores conectados
-          <strong id="online">0</strong>
-        </div>
+          <form id="resetForm">
+            <input
+              id="newpassword"
+              type="password"
+              placeholder="Nova senha — mínimo 8 caracteres"
+              minlength="8"
+              required
+            >
 
-        <div class="stat">
-          ⚙️ Versão
-          <strong>4.1.0</strong>
+            <button class="primary wide" type="submit">
+              Alterar senha
+            </button>
+          </form>
+
+          <button
+            id="backLoginFromReset"
+            class="wide"
+            type="button"
+            style="margin-top:10px"
+          >
+            Voltar para login
+          </button>
         </div>
 
       </div>
+    </section>
 
-      <!-- CONTROLE GAMECLOUD -->
-      <div class="card">
+    <!-- ÁREA DO USUÁRIO -->
+    <section id="user" class="page">
 
-        <h2>🎮 Controle do FiveM</h2>
+      <div class="user-shell">
 
-        <p class="muted">
-          Controle o computador GameCloud e envie comandos para o agente.
-        </p>
+        <!-- MENU DO USUÁRIO -->
+        <aside class="sidebar">
 
-        <div class="stream-status">
-
-          <strong>Estado atual:</strong>
-
-          <div id="streamStatus" class="offline">
-            Verificando...
+          <div class="side-user">
+            <strong id="sideName">Usuário</strong>
+            <small>Cliente GameCloud</small>
           </div>
 
-          <p id="streamGame" class="muted">
-            Jogo: FiveM
-          </p>
+          <button
+            class="side-btn active"
+            data-page="home"
+            type="button"
+          >
+            🏠 Início
+          </button>
 
-          <p id="streamHost" class="muted">
-            Computador: —
-          </p>
+          <button
+            class="side-btn"
+            data-page="servers"
+            type="button"
+          >
+            🎮 FiveM
+          </button>
 
-          <p id="streamMessage" class="muted">
-            —
-          </p>
+          <button
+            class="side-btn"
+            data-page="buy"
+            type="button"
+          >
+            💳 Comprar minutos
+          </button>
 
-          <p id="streamHeartbeat" class="muted">
-            Último contato: —
-          </p>
+          <button
+            class="side-btn"
+            data-page="profile"
+            type="button"
+          >
+            👤 Meu perfil
+          </button>
+
+          <button
+            class="side-btn"
+            data-page="settings"
+            type="button"
+          >
+            ⚙️ Configurações
+          </button>
+
+          <button
+            class="side-btn"
+            data-page="support"
+            type="button"
+          >
+            💬 Suporte
+          </button>
+
+          <button
+            id="logout"
+            class="side-logout"
+            type="button"
+          >
+            Sair da conta
+          </button>
+
+        </aside>
+
+        <!-- CONTEÚDO DO USUÁRIO -->
+        <div>
+
+          <!-- HOME -->
+          <div id="home" class="user-page">
+
+            <div class="dashboard-head">
+
+              <div class="head-row">
+
+                <div>
+                  <p class="muted">
+                    Painel do cliente
+                  </p>
+
+                  <h1>
+                    Olá, <span id="greetingName">usuário</span>!
+                  </h1>
+
+                  <p class="muted">
+                    Gerencie seu acesso ao Império GameCloud.
+                  </p>
+                </div>
+
+                <div class="balance">
+                  <small>Seu saldo de tempo</small>
+                  <strong>
+                    <span id="minutes">0</span>
+                    min
+                  </strong>
+                </div>
+
+              </div>
+
+            </div>
+
+            <div class="stats">
+
+              <div class="stat">
+                <div class="stat-icon">🎮</div>
+                <small>Servidor</small>
+                <strong>FiveM</strong>
+              </div>
+
+              <div class="stat">
+                <div class="stat-icon">🟢</div>
+                <small>GameCloud</small>
+                <strong id="playerMiniStatus">
+                  Verificando...
+                </strong>
+              </div>
+
+              <div class="stat">
+                <div class="stat-icon">⏱️</div>
+                <small>Minutos disponíveis</small>
+                <strong>
+                  <span id="minutesMini">0</span>
+                </strong>
+              </div>
+
+            </div>
+
+            <div class="card server-card">
+
+              <div class="server-top">
+
+                <div>
+                  <div class="server-name">
+                    <span class="online-dot"></span>
+                    FiveM Cloud Server
+                  </div>
+
+                  <p class="muted">
+                    Seu servidor para jogar na nuvem.
+                  </p>
+                </div>
+
+                <div id="playerStreamStatus">
+                  Verificando...
+                </div>
+
+              </div>
+
+              <div class="server-info">
+
+                <div>
+                  <small>Jogo</small>
+                  <strong>FiveM</strong>
+                </div>
+
+                <div>
+                  <small>Host</small>
+                  <strong>PC-GAMECLOUD</strong>
+                </div>
+
+                <div>
+                  <small>Estado</small>
+                  <strong id="playerStreamMessage">
+                    Aguardando
+                  </strong>
+                </div>
+
+                <div>
+                  <small>Seu tempo</small>
+                  <strong>
+                    <span id="minutesHome">0</span> min
+                  </strong>
+                </div>
+
+              </div>
+
+              <div class="actions">
+
+                <button
+                  id="playerStart"
+                  class="primary"
+                  type="button"
+                >
+                  ▶ Iniciar FiveM
+                </button>
+
+                <button
+                  id="refresh"
+                  type="button"
+                >
+                  ↻ Atualizar
+                </button>
+
+              </div>
+
+            </div>
+
+            <div class="card">
+
+              <h2 class="section-title">
+                Comprar tempo
+              </h2>
+
+              <p class="muted">
+                Adicione minutos à sua conta para utilizar
+                o GameCloud.
+              </p>
+
+              <button
+                id="buyMinutes"
+                class="primary"
+                type="button"
+              >
+                💳 Ver planos
+              </button>
+
+            </div>
+
+          </div>
+
+          <!-- SERVIDORES -->
+          <div id="servers" class="user-page" style="display:none">
+
+            <div class="dashboard-head">
+              <p class="muted">Seus servidores</p>
+              <h1>🎮 <span>FiveM</span></h1>
+              <p class="muted">
+                Controle seu acesso ao servidor GameCloud.
+              </p>
+            </div>
+
+            <div class="card server-card">
+
+              <div class="server-top">
+
+                <div>
+                  <div class="server-name">
+                    FiveM GameCloud
+                  </div>
+
+                  <p class="muted">
+                    PC-GAMECLOUD
+                  </p>
+                </div>
+
+                <strong id="playerStreamStatus2">
+                  Verificando...
+                </strong>
+
+              </div>
+
+              <div class="server-info">
+
+                <div>
+                  <small>Jogo</small>
+                  <strong>FiveM</strong>
+                </div>
+
+                <div>
+                  <small>Servidor</small>
+                  <strong>GameCloud</strong>
+                </div>
+
+                <div>
+                  <small>Tempo</small>
+                  <strong>
+                    <span id="minutesServer">0</span> min
+                  </strong>
+                </div>
+
+                <div>
+                  <small>Status</small>
+                  <strong id="serverStatusText">
+                    Aguardando
+                  </strong>
+                </div>
+
+              </div>
+
+              <div class="actions">
+
+                <button
+                  id="playerStart2"
+                  class="primary"
+                  type="button"
+                >
+                  ▶ Iniciar FiveM
+                </button>
+
+                <button
+                  id="refreshServer"
+                  type="button"
+                >
+                  ↻ Atualizar
+                </button>
+
+              </div>
+
+            </div>
+
+          </div>
+
+          <!-- COMPRAR MINUTOS -->
+          <div id="buy" class="user-page" style="display:none">
+
+            <div class="dashboard-head">
+              <p class="muted">GameCloud Store</p>
+              <h1>💳 Comprar <span>minutos</span></h1>
+              <p class="muted">
+                Escolha o pacote de tempo que deseja adicionar.
+              </p>
+            </div>
+
+            <div class="notice">
+              <strong>Preço por minuto:</strong>
+              A definir.
+              <br>
+              Os valores reais dos pacotes serão configurados
+              antes de liberar as compras.
+            </div>
+
+            <div class="buy-grid">
+
+              <div class="package">
+
+                <h3>Pacote Inicial</h3>
+
+                <div class="minutes-value">
+                  60 min
+                </div>
+
+                <div class="price">
+                  Valor a definir
+                </div>
+
+                <div class="method">
+                  💠 Pix
+                </div>
+
+                <div class="method">
+                  💳 Cartão
+                </div>
+
+                <button
+                  class="primary wide"
+                  type="button"
+                  disabled
+                >
+                  Comprar
+                </button>
+
+              </div>
+
+              <div class="package featured">
+
+                <h3>Pacote Gamer</h3>
+
+                <div class="minutes-value">
+                  180 min
+                </div>
+
+                <div class="price">
+                  Valor a definir
+                </div>
+
+                <div class="method">
+                  💠 Pix
+                </div>
+
+                <div class="method">
+                  💳 Cartão
+                </div>
+
+                <button
+                  class="primary wide"
+                  type="button"
+                  disabled
+                >
+                  Comprar
+                </button>
+
+              </div>
+
+              <div class="package">
+
+                <h3>Pacote Pro</h3>
+
+                <div class="minutes-value">
+                  500 min
+                </div>
+
+                <div class="price">
+                  Valor a definir
+                </div>
+
+                <div class="method">
+                  💠 Pix
+                </div>
+
+                <div class="method">
+                  💳 Cartão
+                </div>
+
+                <button
+                  class="primary wide"
+                  type="button"
+                  disabled
+                >
+                  Comprar
+                </button>
+
+              </div>
+
+            </div>
+
+          </div>
+
+          <!-- PERFIL -->
+          <div id="profile" class="user-page" style="display:none">
+
+            <div class="dashboard-head">
+              <p class="muted">Conta</p>
+              <h1>👤 Meu <span>perfil</span></h1>
+            </div>
+
+            <div class="card">
+
+              <div class="profile-grid">
+
+                <div class="profile-item">
+                  <small>Nome</small>
+                  <strong id="profileName">-</strong>
+                </div>
+
+                <div class="profile-item">
+                  <small>Usuário</small>
+                  <strong id="profileUsername">-</strong>
+                </div>
+
+                <div class="profile-item">
+                  <small>E-mail</small>
+                  <strong id="profileEmail">-</strong>
+                </div>
+
+                <div class="profile-item">
+                  <small>Minutos disponíveis</small>
+                  <strong>
+                    <span id="profileMinutes">0</span>
+                    minutos
+                  </strong>
+                </div>
+
+              </div>
+
+            </div>
+
+          </div>
+                    <!-- CONFIGURAÇÕES -->
+          <div id="settings" class="user-page" style="display:none">
+
+            <div class="dashboard-head">
+              <p class="muted">Preferências</p>
+              <h1>⚙️ <span>Configurações</span></h1>
+              <p class="muted">
+                Configurações da sua experiência no GameCloud.
+              </p>
+            </div>
+
+            <div class="card">
+
+              <h3>Servidor</h3>
+
+              <div class="profile-item">
+                <small>Jogo selecionado</small>
+                <strong>FiveM</strong>
+              </div>
+
+              <div class="profile-item" style="margin-top:10px">
+                <small>Servidor</small>
+                <strong>PC-GAMECLOUD</strong>
+              </div>
+
+            </div>
+
+            <div class="card">
+
+              <h3>Conta</h3>
+
+              <p class="muted">
+                Para alterar dados da sua conta ou solicitar
+                ajuda, entre em contato com o suporte.
+              </p>
+
+              <button
+                class="primary"
+                type="button"
+                data-page="support"
+              >
+                💬 Abrir suporte
+              </button>
+
+            </div>
+
+          </div>
+
+          <!-- SUPORTE -->
+          <div id="support" class="user-page" style="display:none">
+
+            <div class="dashboard-head">
+              <p class="muted">Central de ajuda</p>
+              <h1>💬 <span>Suporte</span></h1>
+              <p class="muted">
+                Precisa de ajuda com o GameCloud?
+              </p>
+            </div>
+
+            <div class="card support-box">
+
+              <h2>Como podemos ajudar?</h2>
+
+              <p>
+                Se você tiver algum problema para acessar o
+                FiveM, utilizar seus minutos ou acessar sua
+                conta, entre em contato com o suporte.
+              </p>
+
+              <p>
+                <strong>GameCloud:</strong>
+                atendimento aos clientes.
+              </p>
+
+              <div class="notice">
+                O canal de atendimento será configurado
+                na próxima etapa.
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+      </div>
+
+    </section>
+
+    <!-- PAINEL DO ADMINISTRADOR -->
+    <section id="admin" class="page">
+
+      <div class="admin-shell active">
+
+        <div class="admin-header">
+
+          <div class="head-row">
+
+            <div>
+              <p class="muted">
+                Controle administrativo
+              </p>
+
+              <h1>
+                Painel do <span>Administrador</span>
+              </h1>
+
+              <div class="admin-badge">
+                🔐 ACESSO ADMINISTRATIVO
+              </div>
+            </div>
+
+            <button
+              id="logoutAdmin"
+              class="danger"
+              type="button"
+            >
+              Sair
+            </button>
+
+          </div>
 
         </div>
 
-        <div class="stream-buttons">
+        <div class="admin-grid">
 
-          <button
-            id="startStream"
-            class="primary"
-            type="button"
-          >
-            ▶️ Iniciar FiveM
-          </button>
+          <div class="admin-stat">
+            <small>Usuários</small>
+            <strong id="users">0</strong>
+          </div>
 
-          <button
-            id="stopStream"
-            class="danger"
-            type="button"
-          >
-            ⏹️ Encerrar FiveM
-          </button>
+          <div class="admin-stat">
+            <small>Online</small>
+            <strong id="online">0</strong>
+          </div>
 
-          <button
-            id="toggleStream"
-            type="button"
-          >
-            🔄 Ativar/Desativar
-          </button>
+          <div class="admin-stat">
+            <small>Streaming</small>
+            <strong id="streamStatus">
+              Verificando
+            </strong>
+          </div>
 
-          <button
-            id="refreshStream"
-            type="button"
-          >
-            🔃 Atualizar status
-          </button>
+          <div class="admin-stat">
+            <small>Jogo</small>
+            <strong id="streamGame">
+              FiveM
+            </strong>
+          </div>
 
         </div>
 
-      </div>
+        <div class="admin-controls">
 
-      <!-- TEMPO -->
-      <div class="card">
+          <div class="admin-card">
 
-        <h2>⏱️ Adicionar tempo</h2>
+            <h3>🎮 Controle do Streaming</h3>
 
-        <p class="muted">
-          Informe o e-mail do jogador e a quantidade de minutos.
-        </p>
+            <p class="muted">
+              Host:
+              <strong id="streamHost">
+                PC-GAMECLOUD
+              </strong>
+            </p>
 
-        <form id="timeForm">
+            <p>
+              Status:
+              <strong id="streamMessage">
+                -
+              </strong>
+            </p>
 
-          <input
-            id="playerEmail"
-            type="email"
-            placeholder="E-mail do jogador"
-            required
-          >
+            <p class="muted">
+              Último heartbeat:
+              <span id="streamHeartbeat">-</span>
+            </p>
 
-          <input
-            id="addMinutes"
-            type="number"
-            min="1"
-            max="100000"
-            placeholder="Quantidade de minutos"
-            required
-          >
+            <div class="actions">
 
-          <button class="primary" type="submit">
-            ➕ Adicionar minutos
-          </button>
+              <button
+                id="startStream"
+                class="green"
+                type="button"
+              >
+                ▶ Iniciar
+              </button>
 
-        </form>
+              <button
+                id="stopStream"
+                class="danger"
+                type="button"
+              >
+                ■ Parar
+              </button>
 
-      </div>
+              <button
+                id="toggleStream"
+                type="button"
+              >
+                Alternar
+              </button>
 
-      <!-- JOGADORES -->
-      <div class="card">
+              <button
+                id="refreshStream"
+                type="button"
+              >
+                ↻ Atualizar
+              </button>
 
-        <h2>👥 Jogadores</h2>
+            </div>
 
-        <p class="player-count">
-          Lista atualizada pelo servidor.
-        </p>
+          </div>
 
-        <div class="table-wrap">
+          <div class="admin-card">
 
-          <table>
+            <h3>⏱️ Adicionar minutos</h3>
 
-            <thead>
+            <form id="timeForm">
 
-              <tr>
-                <th>Nome</th>
-                <th>E-mail</th>
-                <th>Minutos</th>
-                <th>Status</th>
-              </tr>
+              <input
+                id="playerEmail"
+                type="email"
+                placeholder="E-mail do usuário"
+                required
+              >
 
-            </thead>
+              <input
+                id="addMinutes"
+                type="number"
+                min="1"
+                placeholder="Quantidade de minutos"
+                required
+              >
 
-            <tbody id="players"></tbody>
+              <button
+                class="primary wide"
+                type="submit"
+              >
+                Adicionar minutos
+              </button>
 
-          </table>
+            </form>
+
+          </div>
 
         </div>
 
-        <button id="refreshAdmin" type="button">
-          🔄 Atualizar painel
-        </button>
+        <div class="card">
 
-      </div>
+          <div class="head-row">
 
-      <div class="notice">
+            <div>
+              <h3>👥 Usuários</h3>
+              <p class="muted">
+                Contas cadastradas no GameCloud.
+              </p>
+            </div>
 
-        <strong>ℹ️ Sistema atual</strong>
+            <button
+              id="refreshAdmin"
+              type="button"
+            >
+              ↻ Atualizar
+            </button>
 
-        <p>
-          Cadastro, login, sessões, controle de minutos,
-          agente GameCloud e controle administrativo do FiveM
-          estão ativos.
-        </p>
+          </div>
 
-        <p>
-          O streaming pelo navegador ainda depende da próxima etapa
-          de integração WebRTC. O acesso atual pelo PC pode ser feito
-          pelo Moonlight.
-        </p>
+          <div style="overflow-x:auto">
 
-      </div>
+            <table class="admin-table">
 
-      <div class="nav">
+              <thead>
+                <tr>
+                  <th>Nome</th>
+                  <th>E-mail</th>
+                  <th>Minutos</th>
+                </tr>
+              </thead>
 
-        <button class="logout" type="button">
-          🚪 Sair da conta
-        </button>
+              <tbody id="players">
+                <tr>
+                  <td colspan="3">
+                    Carregando...
+                  </td>
+                </tr>
+              </tbody>
+
+            </table>
+
+          </div>
+
+        </div>
 
       </div>
 
     </section>
+
+    <div class="footer">
+      Império GameCloud • Cloud Gaming Platform
+    </div>
 
   </main>
 
-  <!-- JavaScript principal -->
-  <script src="app.js" defer></script>
+  <script src="app.js"></script>
 
 </body>
 </html>
