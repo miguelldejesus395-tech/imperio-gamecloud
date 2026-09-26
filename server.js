@@ -10,6 +10,7 @@ const PORT = process.env.PORT || 10000;
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const STREAM_AGENT_KEY = process.env.STREAM_AGENT_KEY || '';
+const USER_PASSWORD = process.env.USER_PASSWORD || '';
 
 const SESSION_TTL = 1000 * 60 * 60 * 24 * 7;
 const RESET_TTL = 1000 * 60 * 30;
@@ -19,27 +20,15 @@ const resetTokens = new Map();
 const attempts = new Map();
 const agentCommands = [];
 
-/*
- * ==============================
- * USUÁRIOS
- * ==============================
- */
-
 const users = [
   {
     id: 1,
-    username: 'Miguel003',
-    email: 'miguel@example.com',
-    password: '123456',
+    username: 'miguell003',
+    email: 'ewerton3220@gmail.com',
+    password: USER_PASSWORD,
     minutes: 366
   }
 ];
-
-/*
- * ==============================
- * STREAMING
- * ==============================
- */
 
 const streaming = {
   enabled: true,
@@ -50,18 +39,11 @@ const streaming = {
   message: 'Aguardando o PC de streaming.'
 };
 
-/*
- * ==============================
- * FUNÇÕES AUXILIARES
- * ==============================
- */
-
 function json(res, statusCode, data) {
   res.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-cache'
   });
-
   res.end(JSON.stringify(data));
 }
 
@@ -70,7 +52,6 @@ function text(res, statusCode, message) {
     'Content-Type': 'text/plain; charset=utf-8',
     'Cache-Control': 'no-cache'
   });
-
   res.end(message);
 }
 
@@ -161,9 +142,7 @@ function getCurrentUser(req) {
 function setSessionCookie(res, token) {
   res.setHeader(
     'Set-Cookie',
-    `session=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${Math.floor(
-      SESSION_TTL / 1000
-    )}`
+    `session=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL / 1000)}`
   );
 }
 
@@ -214,11 +193,27 @@ function agentAuthorized(req) {
   return Boolean(key && key === STREAM_AGENT_KEY);
 }
 
-/*
- * ==============================
- * SERVIDOR HTTP
- * ==============================
- */
+function getAdminSession(req) {
+  const cookies = getCookies(req);
+  const token = cookies.admin_session;
+
+  if (!token) {
+    return null;
+  }
+
+  const session = sessions.get(`admin:${token}`);
+
+  if (!session) {
+    return null;
+  }
+
+  if (Date.now() > session.expiresAt) {
+    sessions.delete(`admin:${token}`);
+    return null;
+  }
+
+  return session;
+}
 
 const server = http.createServer(async (req, res) => {
   const parsedUrl = new URL(
@@ -229,59 +224,34 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsedUrl.pathname;
   const method = req.method;
 
-  /*
-   * ==============================
-   * API
-   * ==============================
-   */
-
-  if (
-    method === 'GET' &&
-    pathname === '/api/health'
-  ) {
+  if (method === 'GET' && pathname === '/api/health') {
     json(res, 200, {
       ok: true,
       service: 'Império GameCloud',
       version: '4.1.0'
     });
-
     return;
   }
 
-  /*
-   * ==============================
-   * LOGIN
-   * ==============================
-   */
-
-  if (
-    method === 'POST' &&
-    pathname === '/api/login'
-  ) {
+  if (method === 'POST' && pathname === '/api/login') {
     try {
       const body = await readBody(req);
 
-      const username = String(
-        body.username || ''
-      ).trim();
-
-      const password = String(
-        body.password || ''
-      );
+      const username = String(body.username || '').trim();
+      const password = String(body.password || '');
 
       const user = users.find(
         (item) =>
-          item.username.toLowerCase() ===
-            username.toLowerCase() &&
+          (item.username.toLowerCase() === username.toLowerCase() ||
+            item.email.toLowerCase() === username.toLowerCase()) &&
           item.password === password
       );
 
       if (!user) {
         json(res, 401, {
           ok: false,
-          error: 'Usuário ou senha incorretos.'
+          error: 'Usuário, e-mail ou senha incorretos.'
         });
-
         return;
       }
 
@@ -312,16 +282,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  /*
-   * ==============================
-   * USUÁRIO ATUAL
-   * ==============================
-   */
-
-  if (
-    method === 'GET' &&
-    pathname === '/api/me'
-  ) {
+  if (method === 'GET' && pathname === '/api/me') {
     const user = getCurrentUser(req);
 
     if (!user) {
@@ -342,16 +303,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  /*
-   * ==============================
-   * LOGOUT
-   * ==============================
-   */
-
-  if (
-    method === 'POST' &&
-    pathname === '/api/logout'
-  ) {
+  if (method === 'POST' && pathname === '/api/logout') {
     const cookies = getCookies(req);
 
     if (cookies.session) {
@@ -367,32 +319,15 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  /*
-   * ==============================
-   * ESQUECI A SENHA
-   * ==============================
-   */
-
-  if (
-    method === 'POST' &&
-    pathname === '/api/forgot-password'
-  ) {
+  if (method === 'POST' && pathname === '/api/forgot-password') {
     try {
       const body = await readBody(req);
 
-      const email = String(
-        body.email || ''
-      ).trim().toLowerCase();
+      const email = String(body.email || '').trim().toLowerCase();
 
       const user = users.find(
-        (item) =>
-          item.email.toLowerCase() === email
+        (item) => item.email.toLowerCase() === email
       );
-
-      /*
-       * Por segurança, não informamos se o
-       * e-mail existe ou não.
-       */
 
       if (user) {
         const token = createToken();
@@ -419,38 +354,22 @@ const server = http.createServer(async (req, res) => {
         res,
         'Erro ao processar recuperação de senha.'
       );
-
       return;
     }
   }
 
-  /*
-   * ==============================
-   * RESETAR SENHA
-   * ==============================
-   */
-
-  if (
-    method === 'POST' &&
-    pathname === '/api/reset-password'
-  ) {
+  if (method === 'POST' && pathname === '/api/reset-password') {
     try {
       const body = await readBody(req);
 
-      const token = String(
-        body.token || ''
-      ).trim();
-
-      const password = String(
-        body.password || ''
-      );
+      const token = String(body.token || '').trim();
+      const password = String(body.password || '');
 
       if (!token || !password) {
         badRequest(
           res,
           'Token e nova senha são obrigatórios.'
         );
-
         return;
       }
 
@@ -461,7 +380,6 @@ const server = http.createServer(async (req, res) => {
           ok: false,
           error: 'Token inválido ou expirado.'
         });
-
         return;
       }
 
@@ -472,7 +390,6 @@ const server = http.createServer(async (req, res) => {
           ok: false,
           error: 'Token expirado.'
         });
-
         return;
       }
 
@@ -481,7 +398,6 @@ const server = http.createServer(async (req, res) => {
           res,
           'A senha deve ter pelo menos 6 caracteres.'
         );
-
         return;
       }
 
@@ -496,12 +412,10 @@ const server = http.createServer(async (req, res) => {
           ok: false,
           error: 'Usuário não encontrado.'
         });
-
         return;
       }
 
       user.password = password;
-
       resetTokens.delete(token);
 
       json(res, 200, {
@@ -515,16 +429,9 @@ const server = http.createServer(async (req, res) => {
         res,
         'Erro ao redefinir senha.'
       );
-
       return;
     }
   }
-
-  /*
-   * ==============================
-   * STATUS DO STREAMING
-   * ==============================
-   */
 
   if (
     method === 'GET' &&
@@ -534,15 +441,8 @@ const server = http.createServer(async (req, res) => {
       ok: true,
       streaming
     });
-
     return;
   }
-
-  /*
-   * ==============================
-   * INICIAR FIVEM
-   * ==============================
-   */
 
   if (
     method === 'POST' &&
@@ -561,7 +461,6 @@ const server = http.createServer(async (req, res) => {
         error:
           'O streaming está desativado pelo administrador.'
       });
-
       return;
     }
 
@@ -571,7 +470,6 @@ const server = http.createServer(async (req, res) => {
         error:
           'O PC de streaming está offline.'
       });
-
       return;
     }
 
@@ -581,7 +479,6 @@ const server = http.createServer(async (req, res) => {
         error:
           'Você não possui tempo disponível.'
       });
-
       return;
     }
 
@@ -600,12 +497,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  /*
-   * ==============================
-   * ADMIN LOGIN
-   * ==============================
-   */
-
   if (
     method === 'POST' &&
     pathname === '/api/admin/login'
@@ -613,13 +504,8 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await readBody(req);
 
-      const username = String(
-        body.username || ''
-      ).trim();
-
-      const password = String(
-        body.password || ''
-      );
+      const username = String(body.username || '').trim();
+      const password = String(body.password || '');
 
       if (
         username !== ADMIN_USER ||
@@ -629,7 +515,6 @@ const server = http.createServer(async (req, res) => {
           ok: false,
           error: 'Login de administrador inválido.'
         });
-
         return;
       }
 
@@ -643,11 +528,7 @@ const server = http.createServer(async (req, res) => {
 
       res.setHeader(
         'Set-Cookie',
-        `admin_session=${encodeURIComponent(
-          token
-        )}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${Math.floor(
-          SESSION_TTL / 1000
-        )}`
+        `admin_session=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL / 1000)}`
       );
 
       json(res, 200, {
@@ -661,44 +542,9 @@ const server = http.createServer(async (req, res) => {
         res,
         'Erro no login administrativo.'
       );
-
       return;
     }
   }
-
-  /*
-   * ==============================
-   * VERIFICA ADMIN
-   * ==============================
-   */
-
-  function getAdminSession(request) {
-    const cookies = getCookies(request);
-    const token = cookies.admin_session;
-
-    if (!token) {
-      return null;
-    }
-
-    const session = sessions.get(`admin:${token}`);
-
-    if (!session) {
-      return null;
-    }
-
-    if (Date.now() > session.expiresAt) {
-      sessions.delete(`admin:${token}`);
-      return null;
-    }
-
-    return session;
-  }
-
-  /*
-   * ==============================
-   * STATUS ADMIN
-   * ==============================
-   */
 
   if (
     method === 'GET' &&
@@ -719,12 +565,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  /*
-   * ==============================
-   * ALTERAR STREAMING
-   * ==============================
-   */
-
   if (
     method === 'POST' &&
     pathname === '/api/admin/stream'
@@ -739,9 +579,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await readBody(req);
 
-      if (
-        typeof body.enabled === 'boolean'
-      ) {
+      if (typeof body.enabled === 'boolean') {
         streaming.enabled = body.enabled;
       }
 
@@ -772,16 +610,9 @@ const server = http.createServer(async (req, res) => {
         res,
         'Erro ao atualizar o streaming.'
       );
-
       return;
     }
   }
-
-  /*
-   * ==============================
-   * HEARTBEAT DO AGENTE
-   * ==============================
-   */
 
   if (
     method === 'POST' &&
@@ -824,18 +655,9 @@ const server = http.createServer(async (req, res) => {
         res,
         'Erro no heartbeat.'
       );
-
       return;
     }
   }
-
-  /*
-   * ==============================
-   * COMANDO PARA O AGENTE
-   * ==============================
-   *
-   * O agente consulta esta rota usando GET.
-   */
 
   if (
     method === 'GET' &&
@@ -868,12 +690,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  /*
-   * ==============================
-   * STATUS DO AGENTE
-   * ==============================
-   */
-
   if (
     method === 'GET' &&
     pathname === '/api/agent/status'
@@ -890,12 +706,6 @@ const server = http.createServer(async (req, res) => {
 
     return;
   }
-
-  /*
-   * ==============================
-   * COMANDO DIRETO DO AGENTE
-   * ==============================
-   */
 
   if (
     method === 'POST' &&
@@ -914,7 +724,6 @@ const server = http.createServer(async (req, res) => {
           res,
           'Comando não informado.'
         );
-
         return;
       }
 
@@ -935,16 +744,9 @@ const server = http.createServer(async (req, res) => {
         res,
         'Erro ao adicionar comando.'
       );
-
       return;
     }
   }
-
-  /*
-   * ==============================
-   * ARQUIVOS ESTÁTICOS
-   * ==============================
-   */
 
   let filePath;
 
@@ -959,11 +761,6 @@ const server = http.createServer(async (req, res) => {
       pathname.replace(/^\/+/, '')
     );
   }
-
-  /*
-   * Evita acesso a arquivos fora
-   * da pasta do projeto.
-   */
 
   const projectRoot =
     path.resolve(__dirname);
@@ -1000,28 +797,20 @@ const server = http.createServer(async (req, res) => {
       const contentTypes = {
         '.html':
           'text/html; charset=utf-8',
-
         '.js':
           'application/javascript; charset=utf-8',
-
         '.css':
           'text/css; charset=utf-8',
-
         '.json':
           'application/json; charset=utf-8',
-
         '.png':
           'image/png',
-
         '.jpg':
           'image/jpeg',
-
         '.jpeg':
           'image/jpeg',
-
         '.svg':
           'image/svg+xml',
-
         '.ico':
           'image/x-icon'
       };
@@ -1039,14 +828,12 @@ const server = http.createServer(async (req, res) => {
               500,
               'Erro ao carregar arquivo.'
             );
-
             return;
           }
 
           res.writeHead(200, {
             'Content-Type':
               contentType,
-
             'Cache-Control':
               'no-cache'
           });
@@ -1058,20 +845,12 @@ const server = http.createServer(async (req, res) => {
   );
 });
 
-/*
- * ==============================
- * LIMPEZA DE SESSÕES EXPIRADAS
- * ==============================
- */
-
 setInterval(() => {
   const now = Date.now();
 
   for (
-    const [
-      token,
-      session
-    ] of sessions.entries()
+    const [token, session]
+    of sessions.entries()
   ) {
     if (now > session.expiresAt) {
       sessions.delete(token);
@@ -1079,22 +858,14 @@ setInterval(() => {
   }
 
   for (
-    const [
-      token,
-      reset
-    ] of resetTokens.entries()
+    const [token, reset]
+    of resetTokens.entries()
   ) {
     if (now > reset.expiresAt) {
       resetTokens.delete(token);
     }
   }
 }, 1000 * 60 * 10);
-
-/*
- * ==============================
- * INICIAR SERVIDOR
- * ==============================
- */
 
 server.listen(PORT, () => {
   console.log(
@@ -1116,6 +887,12 @@ server.listen(PORT, () => {
   console.log(
     `ADMIN_USER configurado: ${Boolean(
       ADMIN_USER
+    )}`
+  );
+
+  console.log(
+    `USER_PASSWORD configurada: ${Boolean(
+      USER_PASSWORD
     )}`
   );
 });
