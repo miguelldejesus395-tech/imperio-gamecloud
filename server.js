@@ -14,22 +14,75 @@ const USER_PASSWORD = String(process.env.USER_PASSWORD || '');
 
 const SESSION_TTL = 1000 * 60 * 60 * 24 * 7;
 const RESET_TTL = 1000 * 60 * 30;
+const DATA_FILE = path.join(__dirname, 'data', 'gamecloud.json');
+
+const defaultPackages = [
+  { id: 'basico', name: 'Básico', priceCents: 1000, ram: 4, vcpu: 2, gpu: 'GPU básica', storage: 50, description: 'Uma base leve para começar no FiveM.' },
+  { id: 'intermediario', name: 'Intermediário', priceCents: 2000, ram: 8, vcpu: 4, gpu: 'GPU melhor', storage: 100, description: 'Mais espaço para seu servidor crescer.' },
+  { id: 'avancado', name: 'Avançado', priceCents: 3000, ram: 16, vcpu: 6, gpu: 'GPU avançada', storage: 200, description: 'Desempenho para comunidades maiores.' },
+  { id: 'premium', name: 'Premium', priceCents: 5000, ram: 32, vcpu: 8, gpu: 'GPU mais potente', storage: 400, description: 'A configuração mais completa do catálogo.' }
+];
+
+function readDatabase() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    return {
+      users: Array.isArray(parsed.users) ? parsed.users : null,
+      servers: Array.isArray(parsed.servers) ? parsed.servers : [],
+      packages: Array.isArray(parsed.packages) && parsed.packages.length ? parsed.packages : defaultPackages,
+      orders: Array.isArray(parsed.orders) ? parsed.orders : [],
+      tickets: Array.isArray(parsed.tickets) ? parsed.tickets : [],
+      minutesRateCents: Number.isSafeInteger(parsed.minutesRateCents) ? parsed.minutesRateCents : 10
+    };
+  } catch (error) {
+    return { users: null, servers: [], packages: defaultPackages, orders: [], tickets: [], minutesRateCents: 10 };
+  }
+}
+
+const database = readDatabase();
+function saveDatabase() {
+  fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
+  const temporary = DATA_FILE + '.tmp';
+  fs.writeFileSync(temporary, JSON.stringify({
+    users, servers, packages, orders, tickets, minutesRateCents: database.minutesRateCents
+  }, null, 2), { mode: 0o600 });
+  fs.renameSync(temporary, DATA_FILE);
+}
+
+function passwordFields(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  return { passwordSalt: salt, passwordHash: crypto.scryptSync(password, salt, 64).toString('hex') };
+}
+
+function passwordMatches(user, password) {
+  if (user.passwordHash && user.passwordSalt) {
+    const candidate = crypto.scryptSync(password, user.passwordSalt, 64);
+    const stored = Buffer.from(user.passwordHash, 'hex');
+    return stored.length === candidate.length && crypto.timingSafeEqual(stored, candidate);
+  }
+  return user.password === password;
+}
 
 const sessions = new Map();
 const resetTokens = new Map();
 const agentCommands = [];
 
-const users = [
+const seedPassword = passwordFields(USER_PASSWORD);
+const users = database.users || [
   {
     id: 1,
     name: 'miguell003',
     username: 'miguell003',
     email: 'ewerton3220@gmail.com',
-    password: USER_PASSWORD,
+    ...seedPassword,
     minutes: 366,
     createdAt: new Date().toISOString()
   }
 ];
+const servers = database.servers;
+const packages = database.packages;
+const orders = database.orders;
+const tickets = database.tickets;
 
 const streaming = {
   enabled: true,
@@ -236,7 +289,10 @@ function setSessionCookie(res, token) {
 function clearSessionCookie(res) {
   res.setHeader(
     'Set-Cookie',
-    'session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0'
+    [
+      'session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0',
+      'admin_session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0'
+    ]
   );
 }
 
@@ -329,7 +385,7 @@ const server = http.createServer(async (req, res) => {
 
       const user = findUserByLogin(loginValue);
 
-      if (!user || user.password !== password) {
+      if (!user || !passwordMatches(user, password)) {
         json(res, 401, {
           ok: false,
           error: 'Usuário, e-mail ou senha incorretos.'
@@ -529,12 +585,13 @@ const server = http.createServer(async (req, res) => {
         name: name,
         username: username,
         email: email,
-        password: password,
+        ...passwordFields(password),
         minutes: 0,
         createdAt: new Date().toISOString()
       };
 
       users.push(user);
+      saveDatabase();
 
       console.log(
         `Novo jogador cadastrado: ${email}`
@@ -758,7 +815,9 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      user.password = password;
+      Object.assign(user, passwordFields(password));
+      delete user.password;
+      saveDatabase();
 
       resetTokens.delete(token);
 
@@ -776,6 +835,181 @@ const server = http.createServer(async (req, res) => {
       );
       return;
     }
+  }
+
+  // Catálogo público, com valores definidos no servidor.
+  if (method === 'GET' && pathname === '/api/packages') {
+    json(res, 200, { ok: true, packages: packages.map((item) => ({ ...item })), minutesRateCents: database.minutesRateCents });
+    return;
+  }
+
+  if (method === 'GET' && pathname === '/api/servers') {
+    const user = getCurrentUser(req);
+    if (!user) { unauthorized(res); return; }
+    json(res, 200, { ok: true, servers: servers.filter((item) => item.userId === user.id) });
+    return;
+  }
+
+  if (method === 'GET' && pathname === '/api/orders') {
+    const user = getCurrentUser(req);
+    if (!user) { unauthorized(res); return; }
+    json(res, 200, { ok: true, orders: orders.filter((item) => item.userId === user.id) });
+    return;
+  }
+
+  if (pathname === '/api/support' && (method === 'GET' || method === 'POST')) {
+    const user = getCurrentUser(req);
+    if (!user) { unauthorized(res); return; }
+    if (method === 'GET') { json(res, 200, { ok: true, tickets: tickets.filter((item) => item.userId === user.id) }); return; }
+    try {
+      const body = await readBody(req);
+      const subject = String(body.subject || '').trim();
+      const content = String(body.message || '').trim();
+      if (subject.length < 3 || subject.length > 100 || content.length < 10 || content.length > 2000) { badRequest(res, 'Informe um assunto de 3 a 100 caracteres e uma mensagem de 10 a 2000 caracteres.'); return; }
+      const ticket = { id: crypto.randomUUID(), userId: user.id, userName: user.name, email: user.email, subject, message: content, status: 'ABERTO', createdAt: new Date().toISOString() };
+      tickets.unshift(ticket); saveDatabase(); json(res, 201, { ok: true, ticket }); return;
+    } catch (error) { serverError(res, 'Não foi possível registrar o chamado.'); return; }
+  }
+
+  if (method === 'POST' && pathname === '/api/orders') {
+    const user = getCurrentUser(req);
+    if (!user) { unauthorized(res); return; }
+    try {
+      const body = await readBody(req);
+      const packageId = body.packageId ? String(body.packageId) : '';
+      const minutes = Number(body.minutes || 0);
+      if (!Number.isSafeInteger(minutes) || minutes < 0 || minutes > 50000 || (!packageId && minutes === 0)) {
+        badRequest(res, 'Escolha um pacote e/ou uma quantidade válida de minutos.'); return;
+      }
+      const selectedPackage = packageId ? packages.find((item) => item.id === packageId) : null;
+      if (packageId && !selectedPackage) { badRequest(res, 'Pacote indisponível. Atualize o catálogo e tente novamente.'); return; }
+      const totalCents = (selectedPackage ? selectedPackage.priceCents : 0) + minutes * database.minutesRateCents;
+      const order = {
+        id: crypto.randomUUID(), userId: user.id, packageId: selectedPackage ? selectedPackage.id : null,
+        packageName: selectedPackage ? selectedPackage.name : null,
+        minutes, packagePriceCents: selectedPackage ? selectedPackage.priceCents : 0,
+        minutesPriceCents: minutes * database.minutesRateCents, totalCents,
+        status: 'PENDENTE', createdAt: new Date().toISOString(),
+        paymentMessage: 'Pagamento pendente: não há gateway de pagamento configurado. Aguarde a aprovação manual do administrador.'
+      };
+      orders.unshift(order);
+      saveDatabase();
+      json(res, 201, { ok: true, order });
+      return;
+    } catch (error) { serverError(res, 'Não foi possível registrar o pedido.'); return; }
+  }
+
+  if (method === 'POST' && pathname === '/api/me/profile') {
+    const user = getCurrentUser(req);
+    if (!user) { unauthorized(res); return; }
+    try {
+      const body = await readBody(req);
+      const name = String(body.name || '').trim();
+      if (name.length < 2 || name.length > 60) { badRequest(res, 'O nome deve ter entre 2 e 60 caracteres.'); return; }
+      user.name = name;
+      saveDatabase();
+      json(res, 200, { ok: true, user: publicUser(user) });
+      return;
+    } catch (error) { serverError(res, 'Não foi possível salvar o perfil.'); return; }
+  }
+
+  // Endpoints administrativos: todas as operações exigem sessão admin.
+  if (pathname.startsWith('/api/admin/servers') || pathname.startsWith('/api/admin/orders') || pathname.startsWith('/api/admin/packages') || pathname === '/api/admin/minutes-price' || pathname === '/api/admin/support') {
+    const admin = getAdminSession(req);
+    if (!admin) { unauthorized(res); return; }
+
+    if (method === 'GET' && pathname === '/api/admin/servers') {
+      json(res, 200, { ok: true, servers: servers.map((item) => ({ ...item, userName: (users.find((user) => user.id === item.userId) || {}).name || 'Sem vínculo' })) }); return;
+    }
+    if (method === 'GET' && pathname === '/api/admin/orders') {
+      json(res, 200, { ok: true, orders: orders.map((item) => ({ ...item, userName: (users.find((user) => user.id === item.userId) || {}).name || 'Usuário removido' })) }); return;
+    }
+    if (method === 'GET' && pathname === '/api/admin/packages') {
+      json(res, 200, { ok: true, packages: packages.map((item) => ({ ...item })), minutesRateCents: database.minutesRateCents }); return;
+    }
+
+    if (method === 'POST' && pathname === '/api/admin/servers') {
+      try {
+        const body = await readBody(req);
+        const name = String(body.name || '').trim();
+        const type = String(body.type || '').trim();
+        const userId = body.userId === '' || body.userId === null ? null : Number(body.userId);
+        const ram = Number(body.ram), vcpu = Number(body.vcpu), storage = Number(body.storage);
+        const gpu = String(body.gpu || '').trim();
+        const status = String(body.status || 'offline');
+        if (!name || name.length > 80 || !type || type.length > 40 || !Number.isSafeInteger(ram) || ram < 1 || ram > 512 || !Number.isSafeInteger(vcpu) || vcpu < 1 || vcpu > 128 || !Number.isSafeInteger(storage) || storage < 1 || storage > 10000 || !gpu || gpu.length > 100 || !['offline', 'online', 'provisioning', 'error'].includes(status)) {
+          badRequest(res, 'Revise nome, tipo e especificações do servidor.'); return;
+        }
+        if (userId !== null && !users.some((item) => item.id === userId)) { badRequest(res, 'Usuário vinculado não encontrado.'); return; }
+        const serverId = body.id ? String(body.id) : crypto.randomUUID();
+        const existing = servers.findIndex((item) => item.id === serverId);
+        const entry = { id: serverId, name, type, userId, ram, vcpu, gpu, storage, status, updatedAt: new Date().toISOString() };
+        if (existing >= 0) servers[existing] = { ...servers[existing], ...entry };
+        else { entry.createdAt = entry.updatedAt; servers.push(entry); }
+        saveDatabase();
+        json(res, existing >= 0 ? 200 : 201, { ok: true, server: entry });
+        return;
+      } catch (error) { serverError(res, 'Não foi possível salvar o servidor.'); return; }
+    }
+
+    if (method === 'GET' && pathname === '/api/admin/support') {
+      json(res, 200, { ok: true, tickets: tickets.map((item) => ({ ...item })) }); return;
+    }
+
+    const deleteServer = pathname.match(/^\/api\/admin\/servers\/([^/]+)\/delete$/);
+    if (method === 'POST' && deleteServer) {
+      const index = servers.findIndex((item) => item.id === decodeURIComponent(deleteServer[1]));
+      if (index < 0) { notFound(res); return; }
+      servers.splice(index, 1); saveDatabase(); json(res, 200, { ok: true }); return;
+    }
+
+    const lifecycle = pathname.match(/^\/api\/admin\/servers\/([^/]+)\/(start|stop)$/);
+    if (method === 'POST' && lifecycle) {
+      const item = servers.find((serverItem) => serverItem.id === decodeURIComponent(lifecycle[1]));
+      if (!item) { notFound(res); return; }
+      json(res, 409, { ok: false, error: 'Controle de energia indisponível: não há agente de infraestrutura de servidores conectado. O status real não foi alterado.' }); return;
+    }
+
+    if (method === 'POST' && pathname === '/api/admin/packages') {
+      try {
+        const body = await readBody(req);
+        const packageId = String(body.id || '');
+        const priceCents = Number(body.priceCents);
+        const item = packages.find((catalogItem) => catalogItem.id === packageId);
+        if (!item || !Number.isSafeInteger(priceCents) || priceCents < 0 || priceCents > 100000000) { badRequest(res, 'Pacote ou preço inválido.'); return; }
+        item.priceCents = priceCents; saveDatabase(); json(res, 200, { ok: true, packages }); return;
+      } catch (error) { serverError(res, 'Não foi possível salvar o catálogo.'); return; }
+    }
+
+    if (method === 'POST' && pathname === '/api/admin/minutes-price') {
+      try {
+        const body = await readBody(req);
+        const cents = Number(body.priceCents);
+        if (!Number.isSafeInteger(cents) || cents < 0 || cents > 100000) { badRequest(res, 'Informe um valor por minuto válido.'); return; }
+        database.minutesRateCents = cents; saveDatabase(); json(res, 200, { ok: true, minutesRateCents: cents }); return;
+      } catch (error) { serverError(res, 'Não foi possível salvar o preço dos minutos.'); return; }
+    }
+
+    const approve = pathname.match(/^\/api\/admin\/orders\/([^/]+)\/approve$/);
+    if (method === 'POST' && approve) {
+      const order = orders.find((item) => item.id === decodeURIComponent(approve[1]));
+      if (!order) { notFound(res); return; }
+      if (order.status === 'PENDENTE') {
+        const user = users.find((item) => item.id === order.userId);
+        if (!user) { json(res, 409, { ok: false, error: 'O usuário deste pedido não existe mais.' }); return; }
+        user.minutes = Number(user.minutes || 0) + order.minutes;
+        if (order.packageId) {
+          const item = packages.find((catalogItem) => catalogItem.id === order.packageId);
+          if (item) servers.push({ id: crypto.randomUUID(), name: `${item.name} • FiveM`, type: 'FiveM RP', userId: user.id, ram: item.ram, vcpu: item.vcpu, gpu: item.gpu, storage: item.storage, status: 'offline', createdAt: new Date().toISOString() });
+        }
+        order.status = 'APROVADO'; order.approvedAt = new Date().toISOString();
+        order.paymentMessage = 'Aprovado manualmente pelo administrador.';
+        saveDatabase();
+      }
+      json(res, 200, { ok: true, order }); return;
+    }
+
+    notFound(res); return;
   }
 
   /*
@@ -817,7 +1051,11 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    if (streaming.status !== 'online') {
+    if (
+      streaming.status !== 'online' ||
+      !streaming.lastHeartbeat ||
+      Date.now() - new Date(streaming.lastHeartbeat).getTime() > 90000
+    ) {
       json(res, 400, {
         ok: false,
         error:
@@ -881,7 +1119,12 @@ const server = http.createServer(async (req, res) => {
         minutes: user.minutes,
         online: false
       })),
-      streaming: streaming
+      streaming: streaming,
+      servers: servers.map((item) => ({ ...item, userName: (users.find((user) => user.id === item.userId) || {}).name || 'Sem vínculo' })),
+      orders: orders.map((item) => ({ ...item, userName: (users.find((user) => user.id === item.userId) || {}).name || 'Usuário removido' })),
+      tickets: tickets.map((item) => ({ ...item })),
+      packages: packages.map((item) => ({ ...item })),
+      minutesRateCents: database.minutesRateCents
     });
 
     return;
@@ -925,6 +1168,15 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (
+      streaming.status !== 'online' ||
+      !streaming.lastHeartbeat ||
+      Date.now() - new Date(streaming.lastHeartbeat).getTime() > 90000
+    ) {
+      json(res, 409, { ok: false, error: 'O agente GameCloud não está conectado. Nenhum comando foi enviado e o status real não foi alterado.' });
+      return;
+    }
+
     agentCommands.push({
       command: 'start_fivem',
       createdAt: Date.now(),
@@ -956,6 +1208,15 @@ const server = http.createServer(async (req, res) => {
 
     if (!admin) {
       unauthorized(res);
+      return;
+    }
+
+    if (
+      streaming.status !== 'online' ||
+      !streaming.lastHeartbeat ||
+      Date.now() - new Date(streaming.lastHeartbeat).getTime() > 90000
+    ) {
+      json(res, 409, { ok: false, error: 'O agente GameCloud não está conectado. Nenhum comando foi enviado e o status real não foi alterado.' });
       return;
     }
 
@@ -1103,6 +1364,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       user.minutes += minutes;
+      saveDatabase();
 
       json(res, 200, {
         ok: true,
@@ -1346,12 +1608,28 @@ const server = http.createServer(async (req, res) => {
   const resolvedFile =
     path.resolve(filePath);
 
+  const publicFiles = new Set([
+    'index.html', 'app.js', 'imperio-abertura.png',
+    'imperio-admin.png', 'imperio-usuario.png'
+  ]);
+  const relativeFile = path.relative(projectRoot, resolvedFile).replace(/\\/g, '/');
+
   if (
     resolvedFile !== projectRoot &&
     !resolvedFile.startsWith(
       projectRoot + path.sep
     )
   ) {
+    notFound(res);
+    return;
+  }
+
+  if (!publicFiles.has(relativeFile)) {
+    notFound(res);
+    return;
+  }
+
+  if (resolvedFile === DATA_FILE || resolvedFile.startsWith(path.dirname(DATA_FILE) + path.sep) || path.basename(resolvedFile) === 'gamecloud.json') {
     notFound(res);
     return;
   }
