@@ -455,6 +455,20 @@ async function loadAdmin() {
 }
 
 async function loadUser() {
+  /*
+   * Sessão administrativa não usa /api/me, pois o backend
+   * mantém o administrador separado dos jogadores.
+   */
+  if (role === 'admin') {
+    show('admin');
+
+    await loadAdmin();
+
+    await loadStreamStatus();
+
+    return;
+  }
+
   const result =
     await api('me');
 
@@ -742,8 +756,26 @@ function setupLogin() {
           );
         }
 
-        const result =
-          await api(
+        /*
+         * O mesmo formulário aceita os dois acessos:
+         * - administrador: usa ADMIN_USER / ADMIN_PASSWORD do Render
+         * - jogador: usa a conta cadastrada normalmente
+         *
+         * A senha do administrador nunca fica no frontend.
+         */
+        let result;
+
+        try {
+          result = await api(
+            'admin/login',
+            'POST',
+            {
+              username: email,
+              password: password
+            }
+          );
+        } catch (adminError) {
+          result = await api(
             'login',
             'POST',
             {
@@ -752,6 +784,7 @@ function setupLogin() {
               remember: remember
             }
           );
+        }
 
         saveSession(
           result,
@@ -759,7 +792,9 @@ function setupLogin() {
         );
 
         message(
-          'Login realizado com sucesso.'
+          result.role === 'admin'
+            ? 'Acesso administrativo realizado com sucesso.'
+            : 'Login realizado com sucesso.'
         );
 
         await loadUser();
