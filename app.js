@@ -3393,6 +3393,7 @@ async function restoreSession() {
 
     if (currentAdmin) {
       showAdminApp();
+      await loadAdminAgents();
     } else {
       currentUser = result.user || null;
       showUserApp();
