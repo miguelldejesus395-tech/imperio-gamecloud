@@ -71,6 +71,51 @@ let selectedPackage = null;
 let selectedMinutes = 0;
 
 let cart = null;
+/* FiveM mini dashboard panel */
+let fivemMiniTimer = null;
+let fivemMiniServerId = null;
+function updateFiveMMini(stream, server) {
+  const panel=$('fivemMiniPanel'); if(!panel) return;
+  const s=stream||{};
+  const status=String(s.status||'offline');
+  const labels={online:'Online',starting:'Iniciando...',stopping:'Parando...',error:'Erro',offline:'Offline'};
+  const badge=$('fivemMiniBadge'), state=$('fivemMiniStatus');
+  if(badge){badge.textContent=labels[status]||status;badge.className='status '+(status==='online'?'online':'');}
+  if(state) state.textContent=labels[status]||status;
+  if($('fivemMiniMessage')) $('fivemMiniMessage').textContent=s.message||'Aguardando o PC de streaming.';
+  if($('fivemMiniHost')) $('fivemMiniHost').textContent=s.host||'PC de streaming';
+  if($('fivemMiniServer')) $('fivemMiniServer').textContent=server?.name||'Servidor FiveM';
+  if($('fivemMiniPlayers')) $('fivemMiniPlayers').textContent=(server?.players!=null&&server?.maxPlayers!=null)?server.players+' / '+server.maxPlayers:'—';
+  if($('fivemMiniUptime')) $('fivemMiniUptime').textContent=server?.uptime||'—';
+  panel.classList.remove('hidden');
+}
+function stopFiveMMiniPolling(){if(fivemMiniTimer){clearInterval(fivemMiniTimer);fivemMiniTimer=null;}}
+async function refreshFiveMMini(){
+  try{
+    const result=await api('/stream/status');
+    const server=(servers||[]).find(x=>String(x.id)===String(fivemMiniServerId)) || (servers||[])[0];
+    updateFiveMMini(result.streaming,server);
+    return result.streaming;
+  }catch(e){console.warn('Mini FiveM:',e);return null;}
+}
+function openFiveMMini(serverId){
+  fivemMiniServerId=serverId||fivemMiniServerId;
+  const panel=$('fivemMiniPanel'); if(!panel) return;
+  panel.classList.remove('hidden','minimized');
+  refreshFiveMMini();
+  stopFiveMMiniPolling();
+  fivemMiniTimer=setInterval(refreshFiveMMini,5000);
+}
+function closeFiveMMini(){stopFiveMMiniPolling();$('fivemMiniPanel')?.classList.add('hidden');}
+function bindFiveMMini(){
+  $('fivemMiniClose')?.addEventListener('click',closeFiveMMini);
+  $('fivemMiniMinimize')?.addEventListener('click',()=>$('fivemMiniPanel')?.classList.toggle('minimized'));
+  $('fivemMiniFullscreen')?.addEventListener('click',()=>{
+    const panel=$('fivemMiniPanel'); if(!panel)return;
+    panel.classList.toggle('fullscreen'); panel.classList.remove('minimized');
+  });
+}
+
 
 
 /* ---------------------------------------------------------
@@ -3600,3 +3645,4 @@ window.GameCloudEditor = {
     updateEditorPreview();
   }
 };
+if(document.readyState!=='loading') bindFiveMMini(); else document.addEventListener('DOMContentLoaded',bindFiveMMini);
