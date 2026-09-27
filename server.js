@@ -4,7 +4,6 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const nodemailer = require('nodemailer');
 
 const PORT = Number(process.env.PORT || 10000);
 
@@ -12,8 +11,10 @@ const ADMIN_USER = String(process.env.ADMIN_USER || 'admin').trim();
 const ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || '');
 const STREAM_AGENT_KEY = String(process.env.STREAM_AGENT_KEY || '');
 const USER_PASSWORD = String(process.env.USER_PASSWORD || '');
-const SMTP_USER = String(process.env.SMTP_USER || '').trim();
-const SMTP_APP_PASSWORD = String(process.env.SMTP_APP_PASSWORD || '').replace(/\s+/g, '');
+const RESEND_API_KEY = String(process.env.RESEND_API_KEY || '').trim();
+const RESEND_FROM_EMAIL = String(
+  process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'
+).trim();
 
 const SESSION_TTL = 1000 * 60 * 60 * 24 * 7;
 const RESET_TTL = 1000 * 60 * 30;
@@ -657,48 +658,56 @@ async function sendPasswordRecoveryEmail(
   to,
   token
 ) {
-  if (!SMTP_USER || !SMTP_APP_PASSWORD) {
-    throw new Error('SMTP_USER ou SMTP_APP_PASSWORD não configurado no servidor.');
+  if (!RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY não configurada no servidor.');
   }
 
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: SMTP_USER,
-      pass: SMTP_APP_PASSWORD
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer ' + RESEND_API_KEY,
+      'Content-Type': 'application/json'
     },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000
-  });
-
-  await transporter.sendMail({
-    from: SMTP_USER,
-    to,
-    subject: 'IMPÉRIO GAMECLOUD — Código de recuperação',
-    text: [
-      'IMPÉRIO GAMECLOUD',
-      '',
-      'Você solicitou a recuperação da sua senha.',
-      '',
-      `Seu código de recuperação é: ${token}`,
-      '',
-      'Este código expira em 30 minutos. Se você não solicitou a recuperação, ignore este e-mail.'
-    ].join('\\n'),
-    html: `
-      <div style="font-family:Arial,sans-serif;background:#090c12;color:#f4f7fb;padding:32px">
-        <div style="max-width:520px;margin:auto;background:#111823;border:1px solid #2a3342;border-radius:16px;padding:28px">
-          <h2 style="margin-top:0">IMPÉRIO GAMECLOUD</h2>
-          <p>Você solicitou a recuperação da sua senha.</p>
-          <p>Seu código de recuperação é:</p>
-          <div style="font-size:28px;font-weight:700;letter-spacing:3px;padding:18px;background:#090c12;border-radius:12px;text-align:center">${token}</div>
-          <p style="color:#aeb8c7">Este código expira em 30 minutos. Se você não solicitou a recuperação, ignore este e-mail.</p>
+    body: JSON.stringify({
+      from: RESEND_FROM_EMAIL,
+      to: [to],
+      subject: 'IMPÉRIO GAMECLOUD — Código de recuperação',
+      text: [
+        'IMPÉRIO GAMECLOUD',
+        '',
+        'Você solicitou a recuperação da sua senha.',
+        '',
+        'Seu código de recuperação é: ' + token,
+        '',
+        'Este código expira em 30 minutos. Se você não solicitou a recuperação, ignore este e-mail.'
+      ].join('\\n'),
+      html: `
+        <div style="font-family:Arial,sans-serif;background:#090c12;color:#f4f7fb;padding:32px">
+          <div style="max-width:520px;margin:auto;background:#111823;border:1px solid #2a3342;border-radius:16px;padding:28px">
+            <h2 style="margin-top:0">IMPÉRIO GAMECLOUD</h2>
+            <p>Você solicitou a recuperação da sua senha.</p>
+            <p>Seu código de recuperação é:</p>
+            <div style="font-size:28px;font-weight:700;letter-spacing:3px;padding:18px;background:#090c12;border-radius:12px;text-align:center">${token}</div>
+            <p style="color:#aeb8c7">Este código expira em 30 minutos. Se você não solicitou a recuperação, ignore este e-mail.</p>
+          </div>
         </div>
-      </div>
-    `
+      `
+    })
   });
-}
 
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const message =
+      data?.message ||
+      data?.error?.message ||
+      data?.error ||
+      'O serviço de e-mail recusou o envio.';
+    throw new Error(message);
+  }
+
+  return data;
+}
 function findUserByEmail(
   email
 ) {
