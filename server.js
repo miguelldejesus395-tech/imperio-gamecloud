@@ -1047,39 +1047,32 @@ const server =
             body.remember
           );
 
+
+      if (
+        method === 'POST' &&
+        pathname === '/api/admin/login'
+      ) {
         if (
           login === ADMIN_USER &&
           password === ADMIN_PASSWORD
         ) {
-          const token =
-            createToken();
-
-          const adminKey =
-            `admin:${token}`;
+          const token = createToken();
+          const adminKey = `admin:${token}`;
 
           sessions.set(
             adminKey,
             {
               role: 'admin',
-              expiresAt:
-                Date.now() +
-                SESSION_TTL
+              expiresAt: Date.now() + SESSION_TTL
             }
           );
 
-          setSessionCookie(
-            res,
-            token
-          );
+          setSessionCookie(res, token);
 
           res.setHeader(
             'Set-Cookie',
             [
-              `admin_session=${encodeURIComponent(
-                token
-              )}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${Math.floor(
-                SESSION_TTL / 1000
-              )}`
+              `admin_session=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL / 1000)}`
             ]
           );
 
@@ -1099,6 +1092,18 @@ const server =
 
           return;
         }
+
+        json(
+          res,
+          401,
+          {
+            ok: false,
+            error: 'Credenciais administrativas inválidas.'
+          }
+        );
+
+        return;
+      }
 
         const user =
           findUserByLogin(login);
