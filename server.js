@@ -16,6 +16,25 @@ const RESEND_FROM_EMAIL = String(
   process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'
 ).trim();
 
+const SUPABASE_URL = String(
+  process.env.SUPABASE_URL || ''
+).trim();
+
+const SUPABASE_SECRET_KEY = String(
+  process.env.SUPABASE_SECRET_KEY ||
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  ''
+).trim();
+
+const SUPABASE_TABLE = 'gamecloud_state';
+const SUPABASE_ROW_ID = 1;
+const SUPABASE_ENABLED = Boolean(
+  SUPABASE_URL &&
+  SUPABASE_SECRET_KEY
+);
+
+let remoteSaveQueue = Promise.resolve();
+
 const SESSION_TTL = 1000 * 60 * 60 * 24 * 7;
 const RESET_TTL = 1000 * 60 * 30;
 const DATA_FILE = path.join(__dirname, 'data', 'gamecloud.json');
@@ -159,6 +178,8 @@ function saveDatabase() {
     temporary,
     DATA_FILE
   );
+
+  queueRemoteSave();
 }
 
 function passwordFields(password) {
@@ -266,6 +287,201 @@ const orders =
 
 const tickets =
   database.tickets;
+
+function databaseSnapshot() {
+  return {
+    users: [...users],
+    servers: [...servers],
+    packages: [...packages],
+    orders: [...orders],
+    tickets: [...tickets],
+    minutesRateCents:
+      database.minutesRateCents,
+    siteConfig:
+      database.siteConfig
+  };
+}
+
+function replaceArray(target, source) {
+  target.length = 0;
+
+  if (Array.isArray(source)) {
+    target.push(...source);
+  }
+}
+
+function applyRemoteSnapshot(snapshot) {
+  if (
+    !snapshot ||
+    typeof snapshot !== 'object'
+  ) {
+    return false;
+  }
+
+  replaceArray(users, snapshot.users);
+  replaceArray(servers, snapshot.servers);
+  replaceArray(packages, snapshot.packages);
+  replaceArray(orders, snapshot.orders);
+  replaceArray(tickets, snapshot.tickets);
+
+  if (
+    Number.isSafeInteger(
+      snapshot.minutesRateCents
+    )
+  ) {
+    database.minutesRateCents =
+      snapshot.minutesRateCents;
+  }
+
+  if (
+    snapshot.siteConfig &&
+    typeof snapshot.siteConfig === 'object'
+  ) {
+    database.siteConfig =
+      snapshot.siteConfig;
+  }
+
+  return true;
+}
+
+async function loadRemoteDatabase() {
+  if (!SUPABASE_ENABLED) {
+    return false;
+  }
+
+  const endpoint =
+    `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?id=eq.${SUPABASE_ROW_ID}&select=data`;
+
+  const response = await fetch(
+    endpoint,
+    {
+      method: 'GET',
+      headers: {
+        apikey:
+          SUPABASE_SECRET_KEY,
+        Authorization:
+          `Bearer ${SUPABASE_SECRET_KEY}`
+      }
+    }
+  );
+
+  const payload =
+    await response.json().catch(
+      () => []
+    );
+
+  if (!response.ok) {
+    throw new Error(
+      `Supabase GET ${response.status}: ${JSON.stringify(payload)}`
+    );
+  }
+
+  if (
+    Array.isArray(payload) &&
+    payload[0] &&
+    applyRemoteSnapshot(
+      payload[0].data
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function queueRemoteSave() {
+  if (!SUPABASE_ENABLED) {
+    return;
+  }
+
+  const snapshot =
+    databaseSnapshot();
+
+  remoteSaveQueue =
+    remoteSaveQueue
+      .then(async () => {
+        const endpoint =
+          `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}`;
+
+        const response =
+          await fetch(
+            endpoint,
+            {
+              method: 'POST',
+              headers: {
+                apikey:
+                  SUPABASE_SECRET_KEY,
+                Authorization:
+                  `Bearer ${SUPABASE_SECRET_KEY}`,
+                'Content-Type':
+                  'application/json',
+                Prefer:
+                  'resolution=merge-duplicates,return=minimal'
+              },
+              body: JSON.stringify({
+                id:
+                  SUPABASE_ROW_ID,
+                data:
+                  snapshot,
+                updated_at:
+                  new Date().toISOString()
+              })
+            }
+          );
+
+        if (!response.ok) {
+          const payload =
+            await response.text();
+
+          throw new Error(
+            `Supabase SAVE ${response.status}: ${payload}`
+          );
+        }
+      })
+      .catch((error) => {
+        console.error(
+          'Falha ao salvar o banco no Supabase:',
+          error.message
+        );
+      });
+}
+
+async function initializePersistence() {
+  if (!SUPABASE_ENABLED) {
+    console.log(
+      'Supabase não configurado; usando armazenamento local.'
+    );
+    return;
+  }
+
+  try {
+    const loaded =
+      await loadRemoteDatabase();
+
+    if (loaded) {
+      console.log(
+        'Banco do GameCloud carregado do Supabase.'
+      );
+      return;
+    }
+
+    console.log(
+      'Supabase sem dados do GameCloud; enviando a base local inicial.'
+    );
+
+    queueRemoteSave();
+
+    await remoteSaveQueue;
+  } catch (error) {
+    console.error(
+      'Falha ao inicializar o Supabase:',
+      error.message
+    );
+    console.error(
+      'O servidor continuará usando o armazenamento local até o Supabase ser configurado corretamente.'
+    );
+  }
+}
 
 const streaming = {
   enabled: true,
@@ -3705,12 +3921,15 @@ server.on(
   }
 );
 
-server.listen(
-  PORT,
-  '0.0.0.0',
-  () => {
-    console.log(
-      `Império GameCloud iniciado na porta ${PORT}`
+initializePersistence()
+  .finally(() => {
+    server.listen(
+      PORT,
+      '0.0.0.0',
+      () => {
+        console.log(
+          `Império GameCloud iniciado na porta ${PORT}`
+        );
+      }
     );
-  }
-);
+  });
