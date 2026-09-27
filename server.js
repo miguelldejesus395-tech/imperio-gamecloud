@@ -2360,7 +2360,16 @@ const server =
                         user.minutes ||
                         0
                       ),
-                    online: false
+                    online:
+                      Array.from(
+                        sessions.values()
+                      ).some(
+                        (session) =>
+                          session &&
+                          session.role === 'player' &&
+                          Number(session.userId) === Number(user.id) &&
+                          Date.now() <= Number(session.expiresAt || 0)
+                      )
                   })
                 ),
 
