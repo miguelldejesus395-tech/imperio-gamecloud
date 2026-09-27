@@ -2610,7 +2610,7 @@ function renderAdminUsers(users) {
 
     root.innerHTML = `
       <tr>
-        <td colspan="4">
+        <td colspan="3">
           Nenhum usuário cadastrado.
         </td>
       </tr>
@@ -2619,27 +2619,28 @@ function renderAdminUsers(users) {
     return;
   }
 
+  // O e-mail fica em uma coluna própria e visível no painel,
+  // enquanto o nome de usuário permanece abaixo do nome.
   root.innerHTML =
     users.map(user => `
 
       <tr>
 
         <td>
-          ${escapeHtml(
+          <strong>${escapeHtml(
             user.name || '—'
-          )}
+          )}</strong>
+          <small style="display:block;opacity:.7;margin-top:3px">
+            @${escapeHtml(
+              user.username || '—'
+            )}
+          </small>
         </td>
 
         <td>
-          ${escapeHtml(
-            user.username || '—'
-          )}
-        </td>
-
-        <td>
-          ${escapeHtml(
+          <strong>${escapeHtml(
             user.email || '—'
-          )}
+          )}</strong>
         </td>
 
         <td>
@@ -2660,7 +2661,6 @@ function renderAdminUsers(users) {
 
     `).join('');
 }
-
 
 function renderAdminAgents(agents) {
   const root = $('adminAgents');
