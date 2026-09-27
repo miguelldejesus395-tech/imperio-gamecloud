@@ -215,6 +215,438 @@
   
     .package-card small{font-size:.75rem;font-weight:700}
     @media (max-width:900px){.package-grid{grid-template-columns:1fr}.buy-layout{grid-template-columns:1fr}}
+
+/* =========================================================
+   NOVO PAINEL IMPÉRIO GAMECLOUD — UI 2026
+   Somente interface. APIs, autenticação e backend preservados.
+========================================================= */
+:root{
+  --bg:#07101f;
+  --panel:#0d1b31;
+  --panel2:#112441;
+  --line:#29466b;
+  --text:#f6f8ff;
+  --muted:#9fb1c9;
+  --gold:#7c5cff;
+  --gold2:#6da8ff;
+  --green:#39df91;
+  --red:#ff6d88;
+  --blue:#5d9dff;
+  --radius:18px;
+}
+
+body{
+  background:
+    radial-gradient(circle at 70% -10%,rgba(124,92,255,.24),transparent 30%),
+    radial-gradient(circle at 10% 20%,rgba(42,118,255,.13),transparent 28%),
+    #07101f;
+}
+
+body:before{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  background-image:linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);
+  background-size:48px 48px;
+  mask-image:linear-gradient(to bottom,rgba(0,0,0,.7),transparent 80%);
+  z-index:-1;
+}
+
+.sidebar{
+  background:linear-gradient(180deg,#08162b 0%,#071122 100%);
+  border-right:1px solid #203b60;
+  box-shadow:18px 0 50px rgba(0,0,0,.22);
+}
+
+.side-brand{
+  border-bottom-color:#203b60;
+}
+
+.brand-mark{
+  background:linear-gradient(135deg,#7c5cff,#318bff);
+  color:#fff;
+  box-shadow:0 0 28px rgba(92,111,255,.35);
+}
+
+.side-user{
+  background:linear-gradient(135deg,rgba(50,99,171,.24),rgba(92,67,191,.16));
+  border-color:#284a77;
+}
+
+.nav-item{
+  color:#a9bad2;
+  border-color:transparent;
+  transition:.2s ease;
+}
+
+.nav-item:hover{
+  background:rgba(68,123,210,.13);
+  border-color:#254a78;
+  color:#fff;
+}
+
+.nav-item.active{
+  background:linear-gradient(90deg,rgba(124,92,255,.25),rgba(56,126,255,.12));
+  border-color:#526bd0;
+  color:#fff;
+  box-shadow:inset 3px 0 0 #7c5cff,0 8px 25px rgba(72,86,220,.13);
+}
+
+.nav-icon{
+  filter:drop-shadow(0 0 6px rgba(96,143,255,.35));
+}
+
+.topbar{
+  height:78px;
+  padding:0 clamp(16px,3vw,42px);
+  background:rgba(6,16,32,.82);
+  border-bottom:1px solid #1d385d;
+  box-shadow:0 10px 35px rgba(0,0,0,.18);
+}
+
+.topbar-left,.topbar-right{
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+
+.topbar-search{
+  width:min(360px,30vw);
+  min-width:210px;
+  height:42px;
+  display:flex;
+  align-items:center;
+  gap:9px;
+  padding:0 13px;
+  border:1px solid #294b78;
+  border-radius:12px;
+  background:rgba(13,30,55,.72);
+  color:#91a7c5;
+}
+
+.topbar-search input{
+  width:100%;
+  border:0;
+  outline:0;
+  background:transparent;
+  color:#fff;
+}
+
+.topbar-search input::placeholder{color:#7890af}
+
+.topbar-title{
+  color:#dfe9f9;
+  font-weight:850;
+  letter-spacing:.01em;
+}
+
+.top-icon{
+  position:relative;
+  width:40px;
+  height:40px;
+  border:1px solid #294b78;
+  border-radius:12px;
+  background:#0d2039;
+  color:#dbe7fb;
+}
+
+.notification-dot{
+  position:absolute;
+  top:8px;
+  right:8px;
+  width:6px;
+  height:6px;
+  border-radius:50%;
+  background:#8a6cff;
+  box-shadow:0 0 10px #8a6cff;
+}
+
+.account-chip{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  min-width:160px;
+  padding:5px 9px 5px 5px;
+  border:1px solid #294b78;
+  border-radius:13px;
+  background:rgba(13,30,55,.76);
+}
+
+.account-chip-copy{
+  display:grid;
+  line-height:1.1;
+  flex:1;
+}
+
+.account-chip-copy strong{font-size:.78rem}
+.account-chip-copy small{font-size:.66rem;color:#8299b8;margin-top:3px}
+
+.avatar{
+  background:linear-gradient(135deg,#7c5cff,#328cff);
+  color:#fff;
+  box-shadow:0 0 18px rgba(82,110,255,.28);
+}
+
+.online-chip{
+  border-color:#285d55;
+  background:rgba(20,68,56,.25);
+}
+
+.content{
+  max-width:1600px;
+  padding:clamp(18px,3vw,42px);
+}
+
+.hero{
+  min-height:315px;
+  border:1px solid #365b8e;
+  border-radius:24px;
+  background:
+    linear-gradient(90deg,rgba(6,17,34,.97) 0%,rgba(7,22,43,.88) 43%,rgba(8,20,38,.25) 100%),
+    url('imperio-usuario.png') center 42%/cover;
+  box-shadow:0 24px 65px rgba(0,0,0,.3),inset 0 0 50px rgba(66,95,255,.08);
+}
+
+.hero:after{
+  content:"";
+  position:absolute;
+  width:260px;
+  height:260px;
+  right:-90px;
+  bottom:-130px;
+  background:#744fff;
+  filter:blur(90px);
+  opacity:.18;
+  z-index:-1;
+}
+
+.hero h1{
+  font-size:clamp(2.15rem,4vw,3.7rem);
+  letter-spacing:-.035em;
+}
+
+.eyebrow{
+  color:#8fa8ff;
+  letter-spacing:.16em;
+}
+
+.btn{
+  background:#102640;
+  border-color:#31547e;
+  color:#eaf2ff;
+  border-radius:12px;
+}
+
+.btn:hover{
+  border-color:#6389bd;
+  box-shadow:0 8px 24px rgba(35,99,180,.18);
+}
+
+.btn.primary{
+  background:linear-gradient(135deg,#7c5cff,#3f8cff);
+  border-color:#8271ff;
+  color:#fff;
+  box-shadow:0 10px 30px rgba(80,79,255,.25);
+}
+
+.btn.danger{
+  background:rgba(130,35,59,.25);
+  border-color:#813c58;
+}
+
+.stat,.panel,.server-card,.package-card,.order-card{
+  background:linear-gradient(145deg,rgba(15,38,69,.88),rgba(8,24,45,.88));
+  border-color:#28486f;
+  box-shadow:0 12px 32px rgba(0,0,0,.16);
+  backdrop-filter:blur(10px);
+}
+
+.stat{
+  position:relative;
+  overflow:hidden;
+}
+
+.stat:after{
+  content:"";
+  position:absolute;
+  width:90px;
+  height:90px;
+  right:-30px;
+  top:-35px;
+  border-radius:50%;
+  background:#567dff;
+  filter:blur(35px);
+  opacity:.13;
+}
+
+.stat strong{
+  color:#fff;
+}
+
+.panel-head{
+  border-bottom:1px solid rgba(53,84,123,.45);
+  padding-bottom:13px;
+}
+
+.server-card,.package-card{
+  transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease;
+}
+
+.server-card:hover,.package-card:hover{
+  transform:translateY(-3px);
+  border-color:#496fa4;
+  box-shadow:0 18px 40px rgba(0,0,0,.22);
+}
+
+.spec{
+  background:rgba(5,18,35,.62);
+  border-color:#264665;
+}
+
+.package-price{
+  color:#8eb8ff;
+}
+
+.package-card.selected{
+  border-color:#7d6bff;
+  box-shadow:0 0 0 1px rgba(125,107,255,.35),0 20px 45px rgba(75,70,210,.16);
+}
+
+.status{
+  background:rgba(15,33,57,.72);
+  border-color:#2c4c72;
+}
+
+.dot.online{
+  background:#39df91;
+  box-shadow:0 0 12px rgba(57,223,145,.75);
+}
+
+.table-wrap{
+  border-color:#29496e;
+  background:rgba(6,18,34,.35);
+}
+
+.table th{
+  background:rgba(22,48,82,.45);
+  color:#91a8c6;
+}
+
+.table td{
+  border-bottom-color:#203b5c;
+}
+
+.table tr:hover td{
+  background:rgba(48,91,151,.09);
+}
+
+.notice{
+  border-color:#385a86;
+  background:rgba(30,55,90,.34);
+  color:#c8ddfb;
+}
+
+.notice.green{
+  border-color:#21624f;
+  background:rgba(21,92,68,.18);
+}
+
+.field input,.field select,.field textarea{
+  background:#08182c;
+  border-color:#2a4a70;
+}
+
+.field input:focus,.field select:focus,.field textarea:focus{
+  border-color:#6e73ff;
+  box-shadow:0 0 0 3px rgba(105,94,255,.12);
+}
+
+.admin-header{
+  padding:28px clamp(16px,3vw,38px);
+  background:
+    radial-gradient(circle at 80% 0%,rgba(113,78,255,.18),transparent 35%),
+    linear-gradient(135deg,#091a31,#071325);
+  border-bottom:1px solid #27486f;
+}
+
+.admin-header h1{
+  font-size:clamp(1.8rem,3vw,2.6rem);
+  margin:8px 0;
+}
+
+.admin-nav{
+  border-bottom-color:#29486d;
+  padding-bottom:14px;
+}
+
+.admin-tab{
+  background:#0c2038;
+  border-color:#294a70;
+  color:#91a8c5;
+}
+
+.admin-tab:hover{
+  color:#fff;
+  border-color:#4a6f9f;
+}
+
+.admin-tab.active{
+  background:linear-gradient(135deg,rgba(124,92,255,.35),rgba(52,126,255,.2));
+  border-color:#716dff;
+  color:#fff;
+  box-shadow:0 8px 25px rgba(72,70,190,.18);
+}
+
+.admin-server-card,.ticket,.editor-group{
+  background:rgba(8,24,44,.76);
+  border-color:#29496f;
+}
+
+.editor-preview-hero{
+  border-color:#45699a;
+  background:
+    linear-gradient(90deg,rgba(7,18,35,.96),rgba(8,24,45,.78),rgba(8,20,38,.28)),
+    url('imperio-usuario.png') center/cover;
+}
+
+.auth-layout{
+  background:
+    radial-gradient(circle at 75% 20%,rgba(119,84,255,.22),transparent 28%),
+    #07101f;
+}
+
+.auth-art{
+  background:
+    linear-gradient(0deg,rgba(4,13,27,.95),rgba(5,15,30,.18)),
+    url('imperio-abertura.png') center 38%/cover;
+}
+
+.auth-card{
+  background:rgba(8,23,42,.94);
+  border-color:#2b4c74;
+  box-shadow:0 26px 90px rgba(0,0,0,.48);
+}
+
+@media(max-width:900px){
+  .topbar-title{display:none}
+  .topbar-search{width:min(42vw,300px);min-width:150px}
+  .account-chip{min-width:0}
+  .account-chip-copy{display:none}
+}
+
+@media(max-width:760px){
+  .topbar{height:64px}
+  .topbar-left{flex:1}
+  .topbar-search{width:100%;min-width:0}
+  .topbar-right{gap:6px}
+  .online-chip{display:none}
+  .account-chip{padding:3px}
+  .account-chip>span{display:none}
+  .top-icon{width:36px;height:36px}
+}
+
 </style>
 </head>
 
@@ -507,15 +939,29 @@
       <div class="main">
 
         <header class="topbar">
+          <div class="topbar-left">
+            <div class="topbar-search">
+              <span>⌕</span>
+              <input id="globalSearch" type="search" placeholder="Buscar..." aria-label="Buscar">
+            </div>
+          </div>
+
           <div class="topbar-title" id="topbarTitle">Visão geral</div>
 
           <div class="topbar-right">
+            <button class="top-icon" type="button" aria-label="Notificações">♢<span class="notification-dot"></span></button>
             <span class="online-chip">
               <i id="topOnlineDot" class="dot"></i>
               <span id="topOnlineText">Verificando</span>
             </span>
-
-            <div class="avatar" id="topAvatar">M</div>
+            <div class="account-chip">
+              <div class="avatar" id="topAvatar">M</div>
+              <div class="account-chip-copy">
+                <strong id="topUserName">Miguel Silva</strong>
+                <small>Minha conta</small>
+              </div>
+              <span>⌄</span>
+            </div>
           </div>
         </header>
 
