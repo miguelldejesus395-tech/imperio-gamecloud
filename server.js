@@ -2320,9 +2320,11 @@ const server =
           // cópia antiga da lista de usuários mantida em memória.
           if (SUPABASE_ENABLED) {
             try {
-              // Para a visão administrativa, a fonte de verdade é o
-              // Supabase. Não aguarde uma gravação local pendente aqui,
-              // pois ela pode sobrescrever o estado remoto mais recente.
+              // Primeiro aguarda qualquer gravação local pendente terminar.
+              // Só depois consulta o Supabase, evitando que uma leitura
+              // antiga sobrescreva minutos ou usuários recém-alterados.
+              await remoteSaveQueue;
+
               await loadRemoteDatabase();
 
               console.log(
@@ -2332,7 +2334,7 @@ const server =
               );
             } catch (error) {
               console.error(
-                'Falha ao atualizar painel admin pelo Supabase:',
+                'Falha ao sincronizar painel admin com o Supabase:',
                 error.message
               );
             }
