@@ -2290,6 +2290,8 @@ async function startFiveM(serverId) {
     });
 
     say(result.message || 'Solicitação enviada.');
+    fivemMiniServerId = serverId || fivemMiniServerId;
+    openFiveMMini(serverId);
     await loadStreamStatus();
     showUserSection('fivem');
   } catch (error) {
@@ -3536,7 +3538,7 @@ async function restoreSession() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', () => {\n  bindFiveMMini();
   $('#loginForm')?.addEventListener('submit', handleLogin);
   $('#registerForm')?.addEventListener('submit', handleRegister);
   $('#adminLoginForm')?.addEventListener('submit', handleAdminLogin);
