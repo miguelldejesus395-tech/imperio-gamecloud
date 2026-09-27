@@ -1438,7 +1438,7 @@ const server = http.createServer(async (req, res) => {
    */
   if (
     method === 'POST' &&
-    (pathname === '/api/agent/heartbeat' || pathname === '/api/stream/heartbeat')
+    ((pathname === '/api/agent/heartbeat' || pathname === '/api/stream/heartbeat') || pathname === '/api/stream/heartbeat')
   ) {
     if (!agentAuthorized(req)) {
       unauthorized(res);
@@ -1487,7 +1487,7 @@ const server = http.createServer(async (req, res) => {
    */
   if (
     method === 'GET' &&
-    (pathname === '/api/agent/command' || pathname === '/api/stream/command')
+    ((pathname === '/api/agent/command' || pathname === '/api/stream/command') || pathname === '/api/stream/command')
   ) {
     if (!agentAuthorized(req)) {
       unauthorized(res);
@@ -1521,7 +1521,7 @@ const server = http.createServer(async (req, res) => {
    */
   if (
     method === 'POST' &&
-    pathname === '/api/agent/status'
+    (pathname === '/api/agent/status' || pathname === '/api/stream/status')
   ) {
     if (!agentAuthorized(req)) {
       unauthorized(res);
