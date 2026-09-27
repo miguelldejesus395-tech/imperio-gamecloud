@@ -1011,6 +1011,94 @@ const server =
         return;
       }
 
+      /*
+       * RECUPERAÇÃO DE SENHA
+       *
+       * Como o projeto não possui um serviço de e-mail configurado,
+       * a API devolve o código temporário para a própria tela de recuperação.
+       */
+      if (
+        method === 'POST' &&
+        pathname === '/api/forgot-password'
+      ) {
+        try {
+          const body = await readBody(req);
+          const email = String(body.email || '').trim().toLowerCase();
+          const user = findUserByEmail(email);
+
+          if (!user) {
+            badRequest(res, 'E-mail não encontrado.');
+            return;
+          }
+
+          const token = crypto.randomBytes(32).toString('hex');
+
+          resetTokens.set(token, {
+            userId: user.id,
+            expiresAt: Date.now() + RESET_TTL
+          });
+
+          json(res, 200, {
+            ok: true,
+            message: 'Código de recuperação gerado. Ele é válido por 30 minutos.',
+            resetToken: token
+          });
+
+          return;
+        } catch (error) {
+          serverError(res, 'Não foi possível solicitar a recuperação.');
+          return;
+        }
+      }
+
+      if (
+        method === 'POST' &&
+        pathname === '/api/reset-password'
+      ) {
+        try {
+          const body = await readBody(req);
+          const token = String(body.token || '').trim();
+          const password = String(body.password || '');
+
+          if (password.length < 8) {
+            badRequest(res, 'A nova senha deve ter pelo menos 8 caracteres.');
+            return;
+          }
+
+          const reset = resetTokens.get(token);
+
+          if (!reset || Date.now() > reset.expiresAt) {
+            if (reset) resetTokens.delete(token);
+            badRequest(res, 'Código de recuperação inválido ou expirado.');
+            return;
+          }
+
+          const user = users.find(
+            item => Number(item.id) === Number(reset.userId)
+          );
+
+          if (!user) {
+            resetTokens.delete(token);
+            notFound(res);
+            return;
+          }
+
+          Object.assign(user, passwordFields(password));
+          resetTokens.delete(token);
+          saveDatabase();
+
+          json(res, 200, {
+            ok: true,
+            message: 'Senha alterada com sucesso.'
+          });
+
+          return;
+        } catch (error) {
+          serverError(res, 'Não foi possível alterar a senha.');
+          return;
+        }
+      }
+
       if (
         method === 'POST' &&
         pathname === '/api/admin/login'
