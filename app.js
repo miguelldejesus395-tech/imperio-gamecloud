@@ -132,12 +132,31 @@ function openFiveMMini(serverId){
 }
 function closeFiveMMini(){stopFiveMMiniPolling();$('fivemMiniPanel')?.classList.add('hidden');}
 function bindFiveMMini(){
-  $('fivemMiniClose')?.addEventListener('click',closeFiveMMini);
-  $('fivemMiniMinimize')?.addEventListener('click',()=>$('fivemMiniPanel')?.classList.toggle('minimized'));
-  $('fivemMiniFullscreen')?.addEventListener('click',()=>{
-    const panel=$('fivemMiniPanel'); if(!panel)return;
-    panel.classList.toggle('fullscreen'); panel.classList.remove('minimized');
-  });
+  const close = $('fivemMiniClose');
+  const minimize = $('fivemMiniMinimize');
+  const fullscreen = $('fivemMiniFullscreen');
+
+  if (close && !close.dataset.bound) {
+    close.dataset.bound = '1';
+    close.addEventListener('click', closeFiveMMini);
+  }
+
+  if (minimize && !minimize.dataset.bound) {
+    minimize.dataset.bound = '1';
+    minimize.addEventListener('click', () => {
+      $('fivemMiniPanel')?.classList.toggle('minimized');
+    });
+  }
+
+  if (fullscreen && !fullscreen.dataset.bound) {
+    fullscreen.dataset.bound = '1';
+    fullscreen.addEventListener('click', () => {
+      const panel = $('fivemMiniPanel');
+      if (!panel) return;
+      panel.classList.toggle('fullscreen');
+      panel.classList.remove('minimized');
+    });
+  }
 }
 
 
@@ -149,8 +168,19 @@ function bindFiveMMini(){
 const $ = (selector) =>
   document.querySelector(selector);
 
-const $$ = (selector) =>
+const $ = (selector) =>
   Array.from(document.querySelectorAll(selector));
+
+/* Segurança de cliques principais: funciona mesmo se a inicialização
+   de um painel falhar antes de registrar os listeners locais. */
+document.addEventListener('click', event => {
+  const button = event.target.closest?.('#addToCart');
+  if (!button) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  addMinutesToCart();
+}, true);
 
 
 /* ---------------------------------------------------------
@@ -532,7 +562,6 @@ function showAdminSection(id) {
 
 
 function setupAdminAgents() {
-  $('#refreshAdminAgents')?.addEventListener('click', loadAdminAgents);
   loadAdminAgents();
 }
 
@@ -3678,4 +3707,4 @@ window.GameCloudEditor = {
     updateEditorPreview();
   }
 };
-if(document.readyState!=='loading') bindFiveMMini(); else document.addEventListener('DOMContentLoaded',bindFiveMMini);
+
