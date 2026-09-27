@@ -291,7 +291,7 @@ function json(
         '*',
 
       'Access-Control-Allow-Headers':
-        'Content-Type, Authorization, X-Stream-Agent-Key',
+        'Content-Type, Authorization, X-Stream-Agent-Key, X-Stream-Agent-Id',
 
       'Access-Control-Allow-Methods':
         'GET, POST, OPTIONS'
@@ -709,7 +709,7 @@ const server =
               '*',
 
             'Access-Control-Allow-Headers':
-              'Content-Type, Authorization, X-Stream-Agent-Key',
+              'Content-Type, Authorization, X-Stream-Agent-Key, X-Stream-Agent-Id',
 
             'Access-Control-Allow-Methods':
               'GET, POST, OPTIONS'
@@ -841,8 +841,13 @@ const server =
           return;
         }
 
-        const command =
-          agentCommands.shift() || null;
+        const agentId = getAgentId(req);
+        const commandIndex = agentCommands.findIndex(command =>
+          !command.agentId || command.agentId === agentId
+        );
+        const command = commandIndex >= 0
+          ? agentCommands.splice(commandIndex, 1)[0]
+          : null;
 
         json(
           res,
@@ -1858,6 +1863,17 @@ const server =
 
         if (!admin) {
           unauthorized(res);
+          return;
+        }
+
+        if (
+          method === 'GET' &&
+          pathname === '/api/admin/stream/agents'
+        ) {
+          json(res, 200, {
+            ok: true,
+            agents: publicAgents()
+          });
           return;
         }
 
