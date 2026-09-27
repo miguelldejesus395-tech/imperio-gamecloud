@@ -1218,6 +1218,27 @@ const server =
         method === 'GET' &&
         pathname === '/api/me'
       ) {
+        const adminSession =
+          getAdminSession(req);
+
+        if (adminSession) {
+          json(
+            res,
+            200,
+            {
+              ok: true,
+              role: 'admin',
+              user: {
+                name:
+                  'Administrator',
+                role: 'admin'
+              }
+            }
+          );
+
+          return;
+        }
+
         const session =
           getSession(req);
 
