@@ -3583,7 +3583,8 @@ async function restoreSession() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => {\n  bindFiveMMini();
+document.addEventListener('DOMContentLoaded', () => {
+  bindFiveMMini();
   $('#loginForm')?.addEventListener('submit', handleLogin);
   $('#registerForm')?.addEventListener('submit', handleRegister);
   $('#adminLoginForm')?.addEventListener('submit', handleAdminLogin);
