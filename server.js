@@ -2761,6 +2761,9 @@ const server =
             type:
               'START_FIVEM',
 
+            agentId:
+              String(userServer.agentId || 'PC-GAMECLOUD'),
+
             userId:
               user.id,
 
@@ -2856,6 +2859,9 @@ const server =
 
             type:
               'STOP_FIVEM',
+
+            agentId:
+              String(userServer.agentId || 'PC-GAMECLOUD'),
 
             userId:
               user.id,
