@@ -2591,6 +2591,13 @@ function renderAdminUsers(users) {
             user.minutes || 0
           ).toLocaleString('pt-BR')}
           min
+          <button
+            type="button"
+            class="btn small"
+            data-add-minutes-email="${escapeHtml(user.email || '')}"
+            style="margin-left:6px">
+            + minutos
+          </button>
         </td>
 
       </tr>
