@@ -666,7 +666,10 @@ async function sendPasswordRecoveryEmail(
     auth: {
       user: SMTP_USER,
       pass: SMTP_APP_PASSWORD
-    }
+    },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000
   });
 
   await transporter.sendMail({
