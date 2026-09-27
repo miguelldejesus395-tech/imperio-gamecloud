@@ -5,7 +5,7 @@
    APP.JS — PARTE 1/3
    ========================================================= */
 
-const API_BASE = '/api/';
+const API_BASE = 'https://imperio-gamecloud-1.onrender.com/api/';
 const CART_KEY = 'igc_cart_v1';
 
 let token =
