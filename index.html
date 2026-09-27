@@ -212,7 +212,10 @@
       .color-row{grid-template-columns:75px minmax(0,1fr)}
       .auth-links{flex-direction:column;align-items:flex-start}
     }
-  </style>
+  
+    .package-card small{font-size:.75rem;font-weight:700}
+    @media (max-width:900px){.package-grid{grid-template-columns:1fr}.buy-layout{grid-template-columns:1fr}}
+</style>
 </head>
 
 <body>
@@ -657,8 +660,8 @@
             <div class="heading">
               <div>
                 <span class="eyebrow">Monte seu setup</span>
-                <h1>Comprar servidor</h1>
-                <p>RAM, vCPU e GPU fazem parte de um único pacote.</p>
+                <h1>Comprar tempo</h1>
+                <p>Um único servidor FiveM. Você paga somente pelos minutos.</p>
               </div>
             </div>
 
@@ -670,7 +673,7 @@
                 <div class="panel-head">
                   <div>
                     <h2>Tempo de jogo</h2>
-                    <p>Adicione minutos ao mesmo carrinho do servidor.</p>
+                    <p>Escolha somente a quantidade de minutos que deseja comprar.</p>
                   </div>
                 </div>
 
@@ -679,12 +682,14 @@
                     Quantidade de minutos
                   </label>
 
-                  <select id="minuteChoice">
-                    <option value="0">Sem minutos adicionais</option>
-                    <option value="60">60 minutos</option>
-                    <option value="180">180 minutos</option>
-                    <option value="600">600 minutos</option>
-                  </select>
+                  <input id="minuteChoice"
+                       type="number"
+                       min="1"
+                       max="50000"
+                       step="1"
+                       value="60"
+                       inputmode="numeric"
+                       required>
                 </div>
 
                 <p id="minutesRateLabel" class="muted small"></p>
@@ -695,14 +700,14 @@
                 <div class="panel-head">
                   <div>
                     <h2>Seleção atual</h2>
-                    <p>Pacote + tempo em um pedido.</p>
+                    <p>Somente minutos. O servidor é criado automaticamente.</p>
                   </div>
                 </div>
 
                 <div id="selectionSummary"></div>
 
                 <button id="addToCart" class="btn primary full">
-                  Adicionar ao carrinho
+                  Adicionar tempo ao carrinho
                 </button>
 
               </section>
@@ -717,7 +722,7 @@
               <div>
                 <span class="eyebrow">Revisão</span>
                 <h1>Carrinho</h1>
-                <p>Confira pacote e minutos antes de continuar.</p>
+                <p>Confira somente o tempo antes de continuar.</p>
               </div>
             </div>
 
@@ -738,7 +743,7 @@
                 <button class="btn ghost full"
                         data-page="buy"
                         style="margin-top:9px">
-                  Adicionar itens
+                  Adicionar minutos
                 </button>
               </section>
 
@@ -1310,9 +1315,9 @@
           <div class="heading">
 
             <div>
-              <h1>Catálogo e preços</h1>
+              <h1>Preço do tempo</h1>
               <p>
-                Os pacotes mantêm especificações unificadas com um único preço.
+                O GameCloud usa um único servidor. Novas compras são cobradas somente por minuto.
               </p>
             </div>
 
@@ -1364,7 +1369,7 @@
               <h1>Editar aplicativo</h1>
 
               <p>
-                Altere textos, aparência, botões e a imagem da tela inicial.
+                Altere textos, cores, botões e a imagem da tela inicial.
                 As alterações publicadas ficam salvas no servidor.
               </p>
             </div>
