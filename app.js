@@ -3391,7 +3391,25 @@ function setupRecoveryForms() {
         method: 'POST',
         body: { email: $('#forgotEmail')?.value.trim() }
       });
-      showMessage(message, result.message || 'Solicitação processada.');
+
+      if (result.resetToken) {
+        const tokenInput = $('#resetToken');
+        if (tokenInput) {
+          tokenInput.value = result.resetToken;
+        }
+
+        showPage('resetPage');
+
+        showMessage(
+          $('#resetMessage'),
+          'Código gerado. Ele já foi preenchido abaixo e é válido por 30 minutos.'
+        );
+      } else {
+        showMessage(
+          message,
+          result.message || 'Solicitação processada.'
+        );
+      }
     } catch (error) {
       showMessage(message, error.message || 'Não foi possível solicitar a recuperação.', true);
     }
