@@ -2315,6 +2315,21 @@ const server =
           pathname ===
             '/api/admin/overview'
         ) {
+          // Sempre sincroniza a visão administrativa com o Supabase
+          // antes de responder. Isso evita que o painel mostre uma
+          // cópia antiga da lista de usuários mantida em memória.
+          if (SUPABASE_ENABLED) {
+            try {
+              await remoteSaveQueue;
+              await loadRemoteDatabase();
+            } catch (error) {
+              console.error(
+                'Falha ao atualizar painel admin pelo Supabase:',
+                error.message
+              );
+            }
+          }
+
           json(
             res,
             200,
