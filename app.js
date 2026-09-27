@@ -70,7 +70,31 @@ let selectedPackage = null;
 
 let selectedMinutes = 0;
 
-let cart = null;
+let cart = { packageId: null, minutes: 0 };
+let minutesRateCents = 0;
+
+function saveCart() {
+  try {
+    localStorage.setItem('gamecloud_cart', JSON.stringify(cart));
+  } catch (error) {
+    console.warn('Não foi possível salvar o carrinho:', error);
+  }
+}
+
+function loadCart() {
+  try {
+    const raw = localStorage.getItem('gamecloud_cart');
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    if (saved && Number.isSafeInteger(Number(saved.minutes)) && Number(saved.minutes) >= 0) {
+      cart = { packageId: saved.packageId || null, minutes: Number(saved.minutes) };
+      selectedMinutes = Number(saved.minutes);
+    }
+  } catch (error) {
+    console.warn('Não foi possível carregar o carrinho:', error);
+    cart = { packageId: null, minutes: 0 };
+  }
+}
 /* FiveM mini dashboard panel */
 let fivemMiniTimer = null;
 let fivemMiniServerId = null;
@@ -3590,6 +3614,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#adminLoginForm')?.addEventListener('submit', handleAdminLogin);
 
   setupAuthenticationNavigation();
+  loadCart();
   setupMainCommerceEvents();
   setupUserNavigation();
   setupAdminNavigation();
