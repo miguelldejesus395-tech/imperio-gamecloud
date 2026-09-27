@@ -1437,7 +1437,7 @@ const server = http.createServer(async (req, res) => {
    * HEARTBEAT DO PC
    */
   if (
-    method === 'POST' &&
+    (method === 'POST' || method === 'GET') &&
     (pathname === '/api/agent/heartbeat' || pathname === '/api/stream/heartbeat')
   ) {
     if (!agentAuthorized(req)) {
@@ -1447,10 +1447,10 @@ const server = http.createServer(async (req, res) => {
 
     try {
       const body =
-        await readBody(req);
+        method === 'POST' ? await readBody(req) : {};
 
       streaming.status =
-        body.status || 'online';
+        body.status || streaming.status || 'online';
 
       streaming.game =
         body.game || 'FiveM';
@@ -1598,6 +1598,16 @@ const server = http.createServer(async (req, res) => {
     try {
       const body =
         await readBody(req);
+
+      if (!body.command && Object.keys(body).length === 0) {
+        const command = agentCommands.shift() || null;
+        json(res, 200, {
+          ok: true,
+          command: command ? command.command : null,
+          message: command ? 'Comando disponível.' : 'Nenhum comando pendente.'
+        });
+        return;
+      }
 
       if (!body.command) {
         badRequest(
