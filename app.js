@@ -3382,31 +3382,61 @@ function setupMainCommerceEvents() {
 
 function setupRecoveryForms() {
 
-  $('#forgotForm')?.addEventListener('submit', async event => {
-    event.preventDefault();
-    const message = $('#forgotMessage');
+  const forgotForm = $('#forgotForm');
+  const forgotButton = forgotForm?.querySelector('button[type="submit"]');
 
-    try {
-      const result = await api('/forgot-password', {
-        method: 'POST',
-        body: { email: $('#forgotEmail')?.value.trim() }
-      });
+  if (forgotForm) {
+    forgotForm.addEventListener('submit', async event => {
+      event.preventDefault();
 
-      const tokenInput = $('#resetToken');
-      if (tokenInput) {
-        tokenInput.value = '';
+      const message = $('#forgotMessage');
+      const email = String($('#forgotEmail')?.value || '').trim();
+
+      showMessage(message, 'Enviando código de recuperação...');
+
+      if (!email) {
+        showMessage(message, 'Informe seu e-mail.', true);
+        return;
       }
 
-      showPage('resetPage');
+      try {
+        const result = await api('/forgot-password', {
+          method: 'POST',
+          body: { email }
+        });
 
-      showMessage(
-        $('#resetMessage'),
-        result.message || 'Código enviado para o seu e-mail. Verifique também a pasta de spam.'
-      );
-    } catch (error) {
-      showMessage(message, error.message || 'Não foi possível solicitar a recuperação.', true);
-    }
-  });
+        const tokenInput = $('#resetToken');
+        if (tokenInput) {
+          tokenInput.value = '';
+        }
+
+        showPage('resetPage');
+
+        showMessage(
+          $('#resetMessage'),
+          result.message || 'Código enviado para o seu e-mail. Verifique também a pasta de spam.'
+        );
+      } catch (error) {
+        showMessage(
+          message,
+          error.message || 'Não foi possível solicitar a recuperação.',
+          true
+        );
+      } finally {
+        if (forgotButton) {
+          forgotButton.disabled = false;
+          forgotButton.textContent = 'Solicitar recuperação';
+        }
+      }
+    });
+  }
+
+  if (forgotButton) {
+    forgotButton.addEventListener('click', () => {
+      forgotButton.disabled = true;
+      forgotButton.textContent = 'Enviando...';
+    });
+  }
 
   $('#resetForm')?.addEventListener('submit', async event => {
     event.preventDefault();
