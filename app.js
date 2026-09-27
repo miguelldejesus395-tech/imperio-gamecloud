@@ -3199,6 +3199,12 @@ function setupMainCommerceEvents() {
     });
   }
 
+  if ($('refreshAdminAgents') && !$('refreshAdminAgents').dataset.bound) {
+    $('refreshAdminAgents').dataset.bound = '1';
+    $('refreshAdminAgents').addEventListener('click', loadAdminAgents);
+    loadAdminAgents();
+  }
+
   if ($('refreshStream') && !$('refreshStream').dataset.bound) {
     $('refreshStream').dataset.bound = '1';
     $('refreshStream').addEventListener('click', loadStreamStatus);
