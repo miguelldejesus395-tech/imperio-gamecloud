@@ -647,6 +647,29 @@ body:before{
   .top-icon{width:36px;height:36px}
 }
 
+
+/* FiveM mini player */
+.fivem-mini{position:fixed;right:24px;bottom:24px;width:min(680px,calc(100vw - 32px));z-index:50;border:1px solid #365f99;border-radius:20px;background:rgba(7,17,34,.97);box-shadow:0 28px 80px rgba(0,0,0,.55),0 0 45px rgba(75,93,255,.16);overflow:hidden;backdrop-filter:blur(18px)}
+.fivem-mini.fullscreen{inset:18px;width:auto;height:auto;bottom:auto;right:auto;display:flex;flex-direction:column}
+.fivem-mini.minimized .fivem-mini-body{display:none}
+.fivem-mini-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid #26466f;background:linear-gradient(90deg,rgba(39,72,125,.25),rgba(92,70,190,.18))}
+.fivem-mini-head strong{display:block;margin-top:3px;font-size:.98rem}
+.fivem-mini-actions{display:flex;gap:6px;align-items:center}
+.fivem-mini-actions .btn{min-width:38px;padding:7px 9px}
+.fivem-mini-body{padding:14px}
+.fivem-screen{position:relative;min-height:260px;border-radius:15px;overflow:hidden;border:1px solid #2d527f;background:radial-gradient(circle at 50% 35%,rgba(78,102,255,.24),transparent 38%),linear-gradient(145deg,#07152b,#0a1020 58%,#16102d)}
+.fivem-screen-glow{position:absolute;inset:-30%;background:radial-gradient(circle,rgba(92,126,255,.18),transparent 50%);animation:fivemPulse 3s ease-in-out infinite}
+.fivem-screen-content{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;text-align:center}
+.fivem-logo{font-size:clamp(2rem,5vw,4rem);font-weight:950;letter-spacing:.18em;background:linear-gradient(90deg,#fff,#7c8cff,#6da8ff);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 35px rgba(92,120,255,.3)}
+.fivem-screen-content strong{max-width:90%;font-size:.95rem}
+.fivem-screen-content small{color:#8ea5c4}
+.fivem-mini-info{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+.fivem-mini-info>div{padding:10px;border:1px solid #243f63;border-radius:11px;background:#0b1930}
+.fivem-mini-info small{display:block;color:#8299b8;font-size:.65rem}
+.fivem-mini-info strong{display:block;margin-top:4px;font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@keyframes fivemPulse{50%{transform:scale(1.08);opacity:.7}}
+@media(max-width:760px){.fivem-mini{right:10px;bottom:72px;width:calc(100vw - 20px)}.fivem-mini-head{padding:11px}.fivem-mini-body{padding:10px}.fivem-screen{min-height:210px}.fivem-mini-info{grid-template-columns:repeat(2,1fr)}.fivem-mini.fullscreen{inset:8px}.fivem-mini-actions .btn{padding:6px 8px}.fivem-mini-actions .btn:first-child{font-size:0}.fivem-mini-actions .btn:first-child:after{content:"⛶";font-size:.9rem}}
+
 </style>
 </head>
 
@@ -2243,5 +2266,36 @@ body:before{
 
   <script src="app.js?v=20260927-1525" defer></script>
 
+
+<div id="fivemMiniPanel" class="fivem-mini hidden" aria-live="polite">
+  <div class="fivem-mini-head">
+    <div>
+      <span class="eyebrow">FiveM • GameCloud</span>
+      <strong id="fivemMiniTitle">FiveM</strong>
+    </div>
+    <div class="fivem-mini-actions">
+      <button type="button" class="btn small ghost" id="fivemMiniFullscreen">⛶ Tela cheia</button>
+      <button type="button" class="btn small ghost" id="fivemMiniMinimize">—</button>
+      <button type="button" class="btn small ghost" id="fivemMiniClose">×</button>
+    </div>
+  </div>
+  <div class="fivem-mini-body">
+    <div class="fivem-screen">
+      <div class="fivem-screen-glow"></div>
+      <div class="fivem-screen-content">
+        <div class="fivem-logo">FIVEM</div>
+        <span id="fivemMiniBadge" class="status">Aguardando</span>
+        <strong id="fivemMiniMessage">Iniciando o FiveM...</strong>
+        <small id="fivemMiniHost">PC de streaming</small>
+      </div>
+    </div>
+    <div class="fivem-mini-info">
+      <div><small>Servidor</small><strong id="fivemMiniServer">—</strong></div>
+      <div><small>Status</small><strong id="fivemMiniStatus">Offline</strong></div>
+      <div><small>Jogadores</small><strong id="fivemMiniPlayers">—</strong></div>
+      <div><small>Uptime</small><strong id="fivemMiniUptime">—</strong></div>
+    </div>
+  </div>
+</div>
 </body>
 </html>
