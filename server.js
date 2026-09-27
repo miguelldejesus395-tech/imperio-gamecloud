@@ -4,6 +4,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { Pool } = require('pg');
 
 const PORT = Number(process.env.PORT || 10000);
 
@@ -15,6 +16,8 @@ const USER_PASSWORD = String(process.env.USER_PASSWORD || '');
 const SESSION_TTL = 1000 * 60 * 60 * 24 * 7;
 const RESET_TTL = 1000 * 60 * 30;
 const DATA_FILE = path.join(__dirname, 'data', 'gamecloud.json');
+const DATABASE_URL = String(process.env.DATABASE_URL || '').trim();
+const dbPool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 3 }) : null;
 
 const defaultSiteConfig = {
   brandName: 'IMPÉRIO GAMECLOUD',
@@ -63,12 +66,36 @@ function readDatabase() {
 }
 
 const database = readDatabase();
-function saveDatabase() {
+
+async function initializePersistentDatabase() {
+  if (!dbPool) return;
+  await dbPool.query(`CREATE TABLE IF NOT EXISTS gamecloud_state (id INTEGER PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  const result = await dbPool.query('SELECT data FROM gamecloud_state WHERE id = 1');
+  if (result.rows.length) {
+    const persisted = result.rows[0].data;
+    if (persisted && typeof persisted === 'object') {
+      database.users = Array.isArray(persisted.users) ? persisted.users : null;
+      database.servers = Array.isArray(persisted.servers) ? persisted.servers : [];
+      database.packages = Array.isArray(persisted.packages) && persisted.packages.length ? persisted.packages : defaultPackages;
+      database.orders = Array.isArray(persisted.orders) ? persisted.orders : [];
+      database.tickets = Array.isArray(persisted.tickets) ? persisted.tickets : [];
+      database.minutesRateCents = Number.isSafeInteger(persisted.minutesRateCents) ? persisted.minutesRateCents : 10;
+      database.siteConfig = persisted.siteConfig && typeof persisted.siteConfig === 'object' ? persisted.siteConfig : defaultSiteConfig;
+    }
+  } else {
+    await dbPool.query('INSERT INTO gamecloud_state (id, data) VALUES (1, $1::jsonb)', [JSON.stringify(database)]);
+  }
+}
+
+async function saveDatabase() {
+  const payload = { users, servers, packages, orders, tickets, minutesRateCents: database.minutesRateCents, siteConfig: database.siteConfig };
+  if (dbPool) {
+    await dbPool.query(`INSERT INTO gamecloud_state (id, data, updated_at) VALUES (1, $1::jsonb, NOW()) ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`, [JSON.stringify(payload)]);
+    return;
+  }
   fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
   const temporary = DATA_FILE + '.tmp';
-  fs.writeFileSync(temporary, JSON.stringify({
-    users, servers, packages, orders, tickets, minutesRateCents: database.minutesRateCents, siteConfig: database.siteConfig
-  }, null, 2), { mode: 0o600 });
+  fs.writeFileSync(temporary, JSON.stringify(payload, null, 2), { mode: 0o600 });
   fs.renameSync(temporary, DATA_FILE);
 }
 
@@ -91,7 +118,7 @@ const resetTokens = new Map();
 const agentCommands = [];
 
 const seedPassword = passwordFields(USER_PASSWORD);
-const users = database.users || [
+let users = database.users || [
   {
     id: 1,
     name: 'miguell003',
@@ -102,10 +129,23 @@ const users = database.users || [
     createdAt: new Date().toISOString()
   }
 ];
-const servers = database.servers;
-const packages = database.packages;
-const orders = database.orders;
-const tickets = database.tickets;
+let servers = database.servers;
+let packages = database.packages;
+let orders = database.orders;
+let tickets = database.tickets;
+
+async function initializeAppState() {
+  await initializePersistentDatabase();
+  users = database.users || users;
+  servers = database.servers;
+  packages = database.packages;
+  orders = database.orders;
+  tickets = database.tickets;
+  if (!database.users) {
+    database.users = users;
+    await saveDatabase();
+  }
+}
 
 const streaming = {
   enabled: true,
@@ -614,7 +654,7 @@ const server = http.createServer(async (req, res) => {
       };
 
       users.push(user);
-      saveDatabase();
+      await saveDatabase();
 
       console.log(
         `Novo jogador cadastrado: ${email}`
@@ -840,7 +880,7 @@ const server = http.createServer(async (req, res) => {
 
       Object.assign(user, passwordFields(password));
       delete user.password;
-      saveDatabase();
+      await saveDatabase();
 
       resetTokens.delete(token);
 
@@ -921,7 +961,7 @@ const server = http.createServer(async (req, res) => {
         paymentMessage: 'Pagamento pendente: não há gateway de pagamento configurado. Aguarde a aprovação manual do administrador.'
       };
       orders.unshift(order);
-      saveDatabase();
+      await saveDatabase();
       json(res, 201, { ok: true, order });
       return;
     } catch (error) { serverError(res, 'Não foi possível registrar o pedido.'); return; }
@@ -935,7 +975,7 @@ const server = http.createServer(async (req, res) => {
       const name = String(body.name || '').trim();
       if (name.length < 2 || name.length > 60) { badRequest(res, 'O nome deve ter entre 2 e 60 caracteres.'); return; }
       user.name = name;
-      saveDatabase();
+      await saveDatabase();
       json(res, 200, { ok: true, user: publicUser(user) });
       return;
     } catch (error) { serverError(res, 'Não foi possível salvar o perfil.'); return; }
@@ -961,7 +1001,7 @@ const server = http.createServer(async (req, res) => {
           theme: { ...defaultSiteConfig.theme, ...(clean.theme || {}) },
           userNav: { ...defaultSiteConfig.userNav, ...(clean.userNav || {}) }
         };
-        saveDatabase();
+        await saveDatabase();
         json(res, 200, { ok: true, siteConfig: database.siteConfig, message: 'Editor publicado com sucesso.' });
         return;
       } catch (error) { serverError(res, 'Não foi possível salvar o editor.'); return; }
@@ -995,9 +1035,10 @@ const server = http.createServer(async (req, res) => {
         const entry = { id: serverId, name, type, userId, ram, vcpu, gpu, storage, status, updatedAt: new Date().toISOString() };
         if (existing >= 0) servers[existing] = { ...servers[existing], ...entry };
         else { entry.createdAt = entry.updatedAt; servers.push(entry); }
-        saveDatabase();
+        await saveDatabase();
         json(res, existing >= 0 ? 200 : 201, { ok: true, server: entry });
-        return;      } catch (error) { serverError(res, 'Não foi possível salvar o servidor.'); return; }
+        return;
+      } catch (error) { serverError(res, 'Não foi possível salvar o servidor.'); return; }
     }
 
     if (method === 'GET' && pathname === '/api/admin/support') {
@@ -1052,7 +1093,7 @@ const server = http.createServer(async (req, res) => {
         }
         order.status = 'APROVADO'; order.approvedAt = new Date().toISOString();
         order.paymentMessage = 'Aprovado manualmente pelo administrador.';
-        saveDatabase();
+        await saveDatabase();
       }
       json(res, 200, { ok: true, order }); return;
     }
@@ -1413,7 +1454,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       user.minutes += minutes;
-      saveDatabase();
+      await saveDatabase();
 
       json(res, 200, {
         ok: true,
@@ -1815,35 +1856,18 @@ setInterval(() => {
 /*
  * INICIA O SERVIDOR
  */
-server.listen(
-  PORT,
-  () => {
-    console.log(
-      `Império GameCloud 4.2.0 rodando na porta ${PORT}`
-    );
-
-    console.log(
-      `STREAM_AGENT_KEY configurada: ${Boolean(
-        STREAM_AGENT_KEY
-      )}`
-    );
-
-    console.log(
-      `ADMIN_PASSWORD configurada: ${Boolean(
-        ADMIN_PASSWORD
-      )}`
-    );
-
-    console.log(
-      `ADMIN_USER configurado: ${Boolean(
-        ADMIN_USER
-      )}`
-    );
-
-    console.log(
-      `USER_PASSWORD configurada: ${Boolean(
-        USER_PASSWORD
-      )}`
-    );
-  }
-);
+initializeAppState()
+  .then(() => {
+    server.listen(PORT, () => {
+      console.log(`Império GameCloud 4.2.0 rodando na porta ${PORT}`);
+      console.log(`Persistência: ${dbPool ? 'PostgreSQL' : 'arquivo local (fallback)'}`);
+      console.log(`STREAM_AGENT_KEY configurada: ${Boolean(STREAM_AGENT_KEY)}`);
+      console.log(`ADMIN_PASSWORD configurada: ${Boolean(ADMIN_PASSWORD)}`);
+      console.log(`ADMIN_USER configurado: ${Boolean(ADMIN_USER)}`);
+      console.log(`USER_PASSWORD configurada: ${Boolean(USER_PASSWORD)}`);
+    });
+  })
+  .catch((error) => {
+    console.error('Falha ao inicializar a persistência:', error);
+    process.exit(1);
+  });
