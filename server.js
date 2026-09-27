@@ -11,6 +11,10 @@ const ADMIN_USER = String(process.env.ADMIN_USER || 'admin').trim();
 const ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || '');
 const STREAM_AGENT_KEY = String(process.env.STREAM_AGENT_KEY || '');
 const USER_PASSWORD = String(process.env.USER_PASSWORD || '');
+const RESEND_API_KEY = String(process.env.RESEND_API_KEY || '');
+const RESEND_FROM_EMAIL = String(
+  process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'
+).trim();
 
 const SESSION_TTL = 1000 * 60 * 60 * 24 * 7;
 const RESET_TTL = 1000 * 60 * 30;
@@ -650,6 +654,54 @@ function publicUser(user) {
   };
 }
 
+async function sendPasswordRecoveryEmail(
+  to,
+  token
+) {
+  if (!RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY não configurada no servidor.');
+  }
+
+  const response = await fetch(
+    'https://api.resend.com/emails',
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${RESEND_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: RESEND_FROM_EMAIL,
+        to: [to],
+        subject: 'IMPÉRIO GAMECLOUD — Código de recuperação',
+        html: `
+          <div style="font-family:Arial,sans-serif;background:#090c12;color:#f4f7fb;padding:32px">
+            <div style="max-width:520px;margin:auto;background:#111823;border:1px solid #2a3342;border-radius:16px;padding:28px">
+              <h2 style="margin-top:0">IMPÉRIO GAMECLOUD</h2>
+              <p>Você solicitou a recuperação da sua senha.</p>
+              <p>Seu código de recuperação é:</p>
+              <div style="font-size:28px;font-weight:700;letter-spacing:3px;padding:18px;background:#090c12;border-radius:12px;text-align:center">${token}</div>
+              <p style="color:#aeb8c7">Este código expira em 30 minutos. Se você não solicitou a recuperação, ignore este e-mail.</p>
+            </div>
+          </div>
+        `
+      })
+    }
+  );
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ||
+      data?.error ||
+      'O serviço de e-mail recusou o envio.'
+    );
+  }
+
+  return data;
+}
+
 function findUserByEmail(
   email
 ) {
@@ -1038,10 +1090,27 @@ const server =
             expiresAt: Date.now() + RESET_TTL
           });
 
+          try {
+            await sendPasswordRecoveryEmail(
+              user.email,
+              token
+            );
+          } catch (error) {
+            resetTokens.delete(token);
+            console.error(
+              '[GameCloud] Falha ao enviar recuperação:',
+              error.message
+            );
+            json(res, 502, {
+              ok: false,
+              error: 'Não foi possível enviar o e-mail de recuperação. Verifique a configuração de e-mail do servidor.'
+            });
+            return;
+          }
+
           json(res, 200, {
             ok: true,
-            message: 'Código de recuperação gerado. Ele é válido por 30 minutos.',
-            resetToken: token
+            message: 'Código de recuperação enviado para o seu e-mail. Ele é válido por 30 minutos.'
           });
 
           return;
