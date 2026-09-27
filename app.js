@@ -1,17 +1,42 @@
-/* =========================================================
-   IMPÉRIO GAMECLOUD
-   APP.JS
-   ========================================================= */
-
 'use strict';
 
-/* ---------------------------------------------------------
-   CONFIGURAÇÃO
---------------------------------------------------------- */
+/* =========================================================
+   IMPÉRIO GAMECLOUD
+   APP.JS — PARTE 1/3
+   ========================================================= */
 
-const API_BASE = '/api';
+const API_BASE = '/api/';
+const CART_KEY = 'igc_cart_v1';
+
+let token =
+  localStorage.getItem('igc_token') ||
+  sessionStorage.getItem('igc_token') ||
+  '';
+
+let role =
+  localStorage.getItem('igc_role') ||
+  sessionStorage.getItem('igc_role') ||
+  '';
+
+let currentUser = null;
+let catalog = [];
+let servers = [];
+let orders = [];
+let tickets = [];
+
+let minutesRateCents = 10;
+let chosenPackage = null;
+let cart = readCart();
+let currentOrder = null;
+let adminData = null;
+
+
+/* =========================================================
+   EDITOR VISUAL
+   ========================================================= */
 
 const defaultSiteConfig = {
+
   brandName: 'IMPÉRIO GAMECLOUD',
 
   authTitle: 'Acesse sua conta',
@@ -20,3044 +45,61 @@ const defaultSiteConfig = {
     'Entre para gerenciar seus servidores e seu tempo de jogo.',
 
   home: {
-    eyebrow: 'Império GameCloud • FiveM',
 
-    title: 'Olá, {name}.',
+    eyebrow:
+      'Império GameCloud • FiveM',
+
+    title:
+      'Olá, {name}.',
 
     text:
       'Seu próximo mundo começa aqui. Acompanhe o tempo, gerencie seus servidores e monte sua configuração.',
 
-    primaryButton: 'Explorar pacotes',
+    primaryButton:
+      'Explorar pacotes',
 
-    secondaryButton: 'Meus servidores',
+    secondaryButton:
+      'Meus servidores',
 
-    heroImage: 'imperio-usuario.png'
+    heroImage:
+      'imperio-usuario.png'
+
   },
 
   theme: {
-    gold: '#f2c94c',
-    background: '#090c12'
+
+    gold:
+      '#f2c94c',
+
+    background:
+      '#090c12'
+
   }
+
 };
 
 let siteConfig =
-  JSON.parse(JSON.stringify(defaultSiteConfig));
-
-let session = null;
-
-let currentUser = null;
-
-let currentAdmin = false;
-
-let packages = [];
-
-let servers = [];
-
-let orders = [];
-
-let tickets = [];
-
-let selectedPackage = null;
-
-let selectedMinutes = 0;
-
-let cart = null;
-
-
-/* ---------------------------------------------------------
-   ELEMENTOS
---------------------------------------------------------- */
-
-const $ = (selector) =>
-  document.querySelector(selector);
-
-const $$ = (selector) =>
-  Array.from(document.querySelectorAll(selector));
-
-
-/* ---------------------------------------------------------
-   MENSAGENS
---------------------------------------------------------- */
-
-function showMessage(element, message, error = false) {
-
-  if (!element) return;
-
-  element.textContent = message || '';
-
-  element.classList.toggle('error', !!error);
-}
-
-
-/* ---------------------------------------------------------
-   API
---------------------------------------------------------- */
-
-async function api(path, options = {}) {
-
-  const headers = {
-    ...(options.headers || {})
-  };
-
-  if (
-    options.body &&
-    typeof options.body !== 'string'
-  ) {
-    headers['Content-Type'] = 'application/json';
-
-    options.body =
-      JSON.stringify(options.body);
-  }
-
-  if (session && session.token) {
-
-    headers.Authorization =
-      `Bearer ${session.token}`;
-  }
-
-  const response =
-    await fetch(`${API_BASE}${path}`, {
-      ...options,
-      headers
-    });
-
-  let data = null;
-
-  const contentType =
-    response.headers.get('content-type') || '';
-
-  if (contentType.includes('application/json')) {
-
-    data = await response.json();
-
-  } else {
-
-    const text =
-      await response.text();
-
-    data = {
-      message: text
-    };
-  }
-
-  if (!response.ok) {
-
-    const error =
-      new Error(
-        data?.message ||
-        data?.error ||
-        `Erro HTTP ${response.status}`
-      );
-
-    error.status = response.status;
-
-    throw error;
-  }
-
-  return data;
-}
-
-
-/* ---------------------------------------------------------
-   SESSÃO
---------------------------------------------------------- */
-
-function saveSession(data, remember = true) {
-
-  session = data;
-
-  const storage =
-    remember
-      ? localStorage
-      : sessionStorage;
-
-  localStorage.removeItem('gamecloud_session');
-  sessionStorage.removeItem('gamecloud_session');
-
-  storage.setItem(
-    'gamecloud_session',
-    JSON.stringify(data)
-  );
-}
-
-
-function loadStoredSession() {
-
-  let raw =
-    localStorage.getItem('gamecloud_session');
-
-  if (!raw) {
-
-    raw =
-      sessionStorage.getItem(
-        'gamecloud_session'
-      );
-  }
-
-  if (!raw) return null;
-
-  try {
-
-    return JSON.parse(raw);
-
-  } catch {
-
-    localStorage.removeItem(
-      'gamecloud_session'
-    );
-
-    sessionStorage.removeItem(
-      'gamecloud_session'
-    );
-
-    return null;
-  }
-}
-
-
-function clearSession() {
-
-  session = null;
-
-  currentUser = null;
-
-  currentAdmin = false;
-
-  localStorage.removeItem(
-    'gamecloud_session'
-  );
-
-  sessionStorage.removeItem(
-    'gamecloud_session'
-  );
-}
-
-
-/* ---------------------------------------------------------
-   PÁGINAS DE AUTENTICAÇÃO
---------------------------------------------------------- */
-
-function showPage(id) {
-
-  $$('.page').forEach(page => {
-
-    page.classList.toggle(
-      'active',
-      page.id === id
-    );
-
-  });
-}
-
-
-function showLogin() {
-
-  showPage('loginPage');
-}
-
-
-function showRegister() {
-
-  showPage('registerPage');
-}
-
-
-function showForgot() {
-
-  showPage('forgotPage');
-}
-
-
-function showReset() {
-
-  showPage('resetPage');
-}
-
-
-function showAdminLogin() {
-
-  showPage('adminLoginPage');
-}
-
-
-/* ---------------------------------------------------------
-   APLICAÇÃO
---------------------------------------------------------- */
-
-function showUserApp() {
-
-  showPage('app');
-
-  currentAdmin = false;
-
-  setupUserNavigation();
-
-  showUserSection('home');
-
-  loadUserData();
-}
-
-
-function showAdminApp() {
-
-  showPage('admin');
-
-  currentAdmin = true;
-
-  setupAdminNavigation();
-
-  showAdminSection('overview');
-
-  loadAdminData();
-
-  loadSiteConfig();
-}
-
-
-/* ---------------------------------------------------------
-   NAVEGAÇÃO DO USUÁRIO
---------------------------------------------------------- */
-
-function showUserSection(id) {
-
-  $$('.content-section').forEach(section => {
-
-    section.classList.toggle(
-      'active',
-      section.id === id
-    );
-
-  });
-
-  $$('.nav-item[data-page]').forEach(button => {
-
-    button.classList.toggle(
-      'active',
-      button.dataset.page === id
-    );
-
-  });
-
-  const titles = {
-
-    home: 'Visão geral',
-
-    servers: 'Meus servidores',
-
-    buy: 'Comprar servidor',
-
-    cart: 'Carrinho',
-
-    payment: 'Pagamento',
-
-    fivem: 'FiveM',
-
-    orders: 'Pedidos',
-
-    profile: 'Perfil',
-
-    settings: 'Configurações',
-
-    support: 'Suporte'
-  };
-
-  const title =
-    $('#topbarTitle');
-
-  if (title) {
-
-    title.textContent =
-      titles[id] || 'Império GameCloud';
-  }
-}
-
-
-function setupUserNavigation() {
-
-  $$('[data-page]').forEach(button => {
-
-    if (
-      button.dataset.page &&
-      !button.dataset.bound
-    ) {
-
-      button.dataset.bound = '1';
-
-      button.addEventListener(
-        'click',
-        () => {
-
-          showUserSection(
-            button.dataset.page
-          );
-
-        }
-      );
-    }
-
-  });
-}
-
-
-/* ---------------------------------------------------------
-   NAVEGAÇÃO ADMIN
---------------------------------------------------------- */
-
-function showAdminSection(id) {
-
-  $$('.admin-section').forEach(section => {
-
-    section.classList.toggle(
-      'active',
-      section.id === `admin-${id}`
-    );
-
-  });
-
-  $$('.admin-tab').forEach(button => {
-
-    button.classList.toggle(
-      'active',
-      button.dataset.adminPage === id
-    );
-
-  });
-
-  if (id === 'editor') {
-
-    loadSiteConfig();
-
-  }
-
-}
-
-
-function setupAdminNavigation() {
-
-  $$('.admin-tab').forEach(button => {
-
-    if (button.dataset.bound) return;
-
-    button.dataset.bound = '1';
-
-    button.addEventListener(
-      'click',
-      () => {
-
-        showAdminSection(
-          button.dataset.adminPage
-        );
-
-      }
-    );
-
-  });
-}
-
-
-/* ---------------------------------------------------------
-   CONFIGURAÇÃO DO SITE
---------------------------------------------------------- */
-
-function cloneDefaultSiteConfig() {
-
-  return JSON.parse(
+  JSON.parse(
     JSON.stringify(defaultSiteConfig)
   );
-}
 
 
-function mergeSiteConfig(config) {
+/* =========================================================
+   HELPERS
+   ========================================================= */
 
-  const base =
-    cloneDefaultSiteConfig();
-
-  if (!config || typeof config !== 'object') {
-
-    return base;
-  }
-
-  return {
-
-    ...base,
-
-    ...config,
-
-    home: {
-      ...base.home,
-      ...(config.home || {})
-    },
-
-    theme: {
-      ...base.theme,
-      ...(config.theme || {})
-    }
-
-  };
-}
+const $ = (id) =>
+  document.getElementById(id);
 
 
-/* ---------------------------------------------------------
-   APLICAR CONFIGURAÇÃO
---------------------------------------------------------- */
-
-function applySiteConfig(config) {
-
-  siteConfig =
-    mergeSiteConfig(config);
-
-  const root =
-    document.documentElement;
-
-  root.style.setProperty(
-    '--gold',
-    siteConfig.theme.gold
-  );
-
-  root.style.setProperty(
-    '--gold2',
-    siteConfig.theme.gold
-  );
-
-  root.style.setProperty(
-    '--bg',
-    siteConfig.theme.background
+const $$ = (selector) =>
+  Array.from(
+    document.querySelectorAll(selector)
   );
 
 
-  /* Marca */
-
-  $$('.brand strong').forEach(element => {
-
-    element.textContent =
-      siteConfig.brandName;
-
-  });
-
-
-  /* Login */
-
-  const loginTitle =
-    $('#loginTitle');
-
-  if (loginTitle) {
-
-    loginTitle.textContent =
-      siteConfig.authTitle;
-
-  }
-
-
-  const loginText =
-    $('#loginText');
-
-  if (loginText) {
-
-    loginText.textContent =
-      siteConfig.authText;
-
-  }
-
-
-  /* Tela inicial */
-
-  const eyebrow =
-    $('#homeEyebrow');
-
-  if (eyebrow) {
-
-    eyebrow.textContent =
-      siteConfig.home.eyebrow;
-
-  }
-
-
-  const homeText =
-    $('#homeText');
-
-  if (homeText) {
-
-    homeText.textContent =
-      siteConfig.home.text;
-
-  }
-
-
-  const primary =
-    $('#homePrimaryButton');
-
-  if (primary) {
-
-    primary.textContent =
-      siteConfig.home.primaryButton;
-
-  }
-
-
-  const secondary =
-    $('#homeSecondaryButton');
-
-  if (secondary) {
-
-    secondary.textContent =
-      siteConfig.home.secondaryButton;
-
-  }
-
-
-  /* Imagem */
-
-  const hero =
-    $('#homeHero');
-
-  if (hero && siteConfig.home.heroImage) {
-
-    hero.style.backgroundImage =
-      `linear-gradient(90deg,#111720f5 0%,#111720db 48%,#11172035 100%),url("${siteConfig.home.heroImage}")`;
-
-  }
-
-
-  updateEditorPreview();
-
-}
-
-
-/* ---------------------------------------------------------
-   CARREGAR CONFIGURAÇÃO DO SERVIDOR
---------------------------------------------------------- */
-
-async function loadSiteConfig() {
-
-  try {
-
-    const data =
-      await api('/site-config');
-
-    const config =
-      data?.siteConfig ||
-      data?.config ||
-      data;
-
-    siteConfig =
-      mergeSiteConfig(config);
-
-    applySiteConfig(siteConfig);
-
-    fillSiteEditor(siteConfig);
-
-  } catch (error) {
-
-    console.warn(
-      'Não foi possível carregar site-config:',
-      error
-    );
-
-    siteConfig =
-      cloneDefaultSiteConfig();
-
-    applySiteConfig(siteConfig);
-
-    fillSiteEditor(siteConfig);
-  }
-}
-
-
-/* ---------------------------------------------------------
-   PREENCHER EDITOR
---------------------------------------------------------- */
-
-function fillSiteEditor(config) {
-
-  const fields = {
-
-    editorBrandName:
-      config.brandName,
-
-    editorAuthTitle:
-      config.authTitle,
-
-    editorAuthText:
-      config.authText,
-
-    editorHomeEyebrow:
-      config.home.eyebrow,
-
-    editorHomeTitle:
-      config.home.title,
-
-    editorHomeText:
-      config.home.text,
-
-    editorPrimaryButton:
-      config.home.primaryButton,
-
-    editorSecondaryButton:
-      config.home.secondaryButton,
-
-    editorGold:
-      config.theme.gold,
-
-    editorGoldText:
-      config.theme.gold,
-
-    editorBackground:
-      config.theme.background,
-
-    editorBackgroundText:
-      config.theme.background
-  };
-
-
-  Object.entries(fields)
-    .forEach(([id, value]) => {
-
-      const element =
-        document.getElementById(id);
-
-      if (element) {
-
-        element.value =
-          value ?? '';
-
-      }
-
-    });
-
-
-  const imageValue =
-    $('#editorHeroImageValue');
-
-  if (imageValue) {
-
-    imageValue.value =
-      config.home.heroImage || '';
-
-  }
-
-
-  const image =
-    $('#editorHeroImage');
-
-  if (
-    image &&
-    config.home.heroImage
-  ) {
-
-    image.src =
-      config.home.heroImage;
-
-    image.style.display =
-      'block';
-
-  }
-
-  updateEditorPreview();
-}
-/* =========================================================
-   EDITOR VISUAL
-   ========================================================= */
-
-function getEditorValue(id, fallback = '') {
-
-  const element =
-    document.getElementById(id);
-
-  if (!element) return fallback;
-
-  return element.value.trim();
-}
-
-
-function editorConfigFromForm() {
-
-  const config =
-    cloneDefaultSiteConfig();
-
-  config.brandName =
-    getEditorValue(
-      'editorBrandName',
-      config.brandName
-    );
-
-  config.authTitle =
-    getEditorValue(
-      'editorAuthTitle',
-      config.authTitle
-    );
-
-  config.authText =
-    getEditorValue(
-      'editorAuthText',
-      config.authText
-    );
-
-  config.home.eyebrow =
-    getEditorValue(
-      'editorHomeEyebrow',
-      config.home.eyebrow
-    );
-
-  config.home.title =
-    getEditorValue(
-      'editorHomeTitle',
-      config.home.title
-    );
-
-  config.home.text =
-    getEditorValue(
-      'editorHomeText',
-      config.home.text
-    );
-
-  config.home.primaryButton =
-    getEditorValue(
-      'editorPrimaryButton',
-      config.home.primaryButton
-    );
-
-  config.home.secondaryButton =
-    getEditorValue(
-      'editorSecondaryButton',
-      config.home.secondaryButton
-    );
-
-  config.home.heroImage =
-    getEditorValue(
-      'editorHeroImageValue',
-      config.home.heroImage
-    );
-
-  const gold =
-    getEditorValue(
-      'editorGoldText',
-      config.theme.gold
-    );
-
-  const background =
-    getEditorValue(
-      'editorBackgroundText',
-      config.theme.background
-    );
-
-  if (/^#[0-9a-fA-F]{6}$/.test(gold)) {
-
-    config.theme.gold =
-      gold;
-
-  }
-
-  if (/^#[0-9a-fA-F]{6}$/.test(background)) {
-
-    config.theme.background =
-      background;
-
-  }
-
-  return config;
-}
-
-
-/* ---------------------------------------------------------
-   PRÉVIA DO EDITOR
---------------------------------------------------------- */
-
-function updateEditorPreview() {
-
-  const config =
-    editorConfigFromForm();
-
-  const previewEyebrow =
-    $('#previewEyebrow');
-
-  const previewTitle =
-    $('#previewTitle');
-
-  const previewText =
-    $('#previewText');
-
-  const previewPrimary =
-    $('#previewPrimary');
-
-  const previewSecondary =
-    $('#previewSecondary');
-
-  const previewHero =
-    $('#editorPreviewHero');
-
-
-  if (previewEyebrow) {
-
-    previewEyebrow.textContent =
-      config.home.eyebrow;
-
-  }
-
-
-  if (previewTitle) {
-
-    previewTitle.textContent =
-      config.home.title.replace(
-        '{name}',
-        'jogador'
-      );
-
-  }
-
-
-  if (previewText) {
-
-    previewText.textContent =
-      config.home.text;
-
-  }
-
-
-  if (previewPrimary) {
-
-    previewPrimary.textContent =
-      config.home.primaryButton;
-
-  }
-
-
-  if (previewSecondary) {
-
-    previewSecondary.textContent =
-      config.home.secondaryButton;
-
-  }
-
-
-  if (previewHero) {
-
-    previewHero.style.backgroundImage =
-      `linear-gradient(90deg,#111720f5 0%,#111720db 48%,#11172035 100%),url("${config.home.heroImage || 'imperio-usuario.png'}")`;
-
-  }
-
-}
-
-
-/* ---------------------------------------------------------
-   STATUS DO EDITOR
---------------------------------------------------------- */
-
-function setEditorStatus(
-  message,
-  error = false
-) {
-
-  const element =
-    $('#editorStatus');
-
-  if (!element) return;
-
-  element.textContent =
-    message || '';
-
-  element.classList.toggle(
-    'error',
-    !!error
-  );
-}
-
-
-/* ---------------------------------------------------------
-   SALVAR EDITOR
---------------------------------------------------------- */
-
-async function saveSiteConfig() {
-
-  const config =
-    editorConfigFromForm();
-
-  if (!config.brandName) {
-
-    setEditorStatus(
-      'Informe o nome da marca.',
-      true
-    );
-
-    return;
-
-  }
-
-  if (!config.authTitle) {
-
-    setEditorStatus(
-      'Informe o título da tela de login.',
-      true
-    );
-
-    return;
-
-  }
-
-  if (!config.home.title) {
-
-    setEditorStatus(
-      'Informe o título da tela inicial.',
-      true
-    );
-
-    return;
-
-  }
-
-  setEditorStatus(
-    'Salvando alterações...'
-  );
-
-
-  try {
-
-    const result =
-      await api(
-        '/admin/site-config',
-        {
-          method: 'POST',
-          body: {
-            siteConfig: config
-          }
-        }
-      );
-
-
-    siteConfig =
-      mergeSiteConfig(
-        result?.siteConfig ||
-        result?.config ||
-        config
-      );
-
-
-    applySiteConfig(
-      siteConfig
-    );
-
-    fillSiteEditor(
-      siteConfig
-    );
-
-
-    setEditorStatus(
-      '✓ Alterações publicadas com sucesso.'
-    );
-
-
-  } catch (error) {
-
-    console.error(
-      'Erro ao salvar editor:',
-      error
-    );
-
-    setEditorStatus(
-      error.message ||
-      'Não foi possível salvar as alterações.',
-      true
-    );
-
-  }
-
-}
-
-
-/* ---------------------------------------------------------
-   RESTAURAR PADRÃO
---------------------------------------------------------- */
-
-function restoreSiteConfig() {
-
-  const config =
-    cloneDefaultSiteConfig();
-
-  fillSiteEditor(
-    config
-  );
-
-  applySiteConfig(
-    config
-  );
-
-  setEditorStatus(
-    'Padrão restaurado na prévia. Clique em "Publicar alterações" para salvar.'
-  );
-
-}
-
-
-/* ---------------------------------------------------------
-   UPLOAD DA IMAGEM
---------------------------------------------------------- */
-
-function setupEditorImageUpload() {
-
-  const input =
-    $('#editorHeroUpload');
-
-  if (!input || input.dataset.bound) {
-    return;
-  }
-
-  input.dataset.bound =
-    '1';
-
-
-  input.addEventListener(
-    'change',
-    () => {
-
-      const file =
-        input.files?.[0];
-
-      if (!file) return;
-
-
-      if (!file.type.startsWith('image/')) {
-
-        setEditorStatus(
-          'Escolha uma imagem PNG, JPG ou WEBP.',
-          true
-        );
-
-        input.value =
-          '';
-
-        return;
-
-      }
-
-
-      const maxSize =
-        750 * 1024;
-
-
-      if (file.size > maxSize) {
-
-        setEditorStatus(
-          'A imagem é muito grande. O limite é 750 KB.',
-          true
-        );
-
-        input.value =
-          '';
-
-        return;
-
-      }
-
-
-      const reader =
-        new FileReader();
-
-
-      reader.onload = () => {
-
-        const result =
-          reader.result;
-
-        if (
-          typeof result !== 'string'
-        ) {
-
-          setEditorStatus(
-            'Não foi possível ler a imagem.',
-            true
-          );
-
-          return;
-
-        }
-
-
-        const hidden =
-          $('#editorHeroImageValue');
-
-        const preview =
-          $('#editorHeroImage');
-
-
-        if (hidden) {
-
-          hidden.value =
-            result;
-
-        }
-
-
-        if (preview) {
-
-          preview.src =
-            result;
-
-          preview.style.display =
-            'block';
-
-        }
-
-
-        updateEditorPreview();
-
-
-        setEditorStatus(
-          'Imagem carregada na prévia. Publique para salvar.'
-        );
-
-      };
-
-
-      reader.onerror = () => {
-
-        setEditorStatus(
-          'Erro ao ler a imagem.',
-          true
-        );
-
-      };
-
-
-      reader.readAsDataURL(file);
-
-    }
-  );
-
-}
-
-
-/* ---------------------------------------------------------
-   CAMPOS DO EDITOR EM TEMPO REAL
---------------------------------------------------------- */
-
-function setupEditorLivePreview() {
-
-  const ids = [
-
-    'editorBrandName',
-
-    'editorAuthTitle',
-
-    'editorAuthText',
-
-    'editorHomeEyebrow',
-
-    'editorHomeTitle',
-
-    'editorHomeText',
-
-    'editorPrimaryButton',
-
-    'editorSecondaryButton',
-
-    'editorGoldText',
-
-    'editorBackgroundText'
-
-  ];
-
-
-  ids.forEach(id => {
-
-    const element =
-      document.getElementById(id);
-
-    if (!element || element.dataset.bound) {
-      return;
-    }
-
-    element.dataset.bound =
-      '1';
-
-
-    element.addEventListener(
-      'input',
-      () => {
-
-        const color =
-          id === 'editorGoldText'
-            ? $('#editorGold')
-            : id === 'editorBackgroundText'
-              ? $('#editorBackground')
-              : null;
-
-
-        if (color) {
-
-          const value =
-            element.value.trim();
-
-          if (
-            /^#[0-9a-fA-F]{6}$/.test(value)
-          ) {
-
-            color.value =
-              value;
-
-          }
-
-        }
-
-
-        updateEditorPreview();
-
-      }
-    );
-
-  });
-
-
-  const gold =
-    $('#editorGold');
-
-  if (
-    gold &&
-    !gold.dataset.bound
-  ) {
-
-    gold.dataset.bound =
-      '1';
-
-    gold.addEventListener(
-      'input',
-      () => {
-
-        const text =
-          $('#editorGoldText');
-
-        if (text) {
-
-          text.value =
-            gold.value;
-
-        }
-
-        updateEditorPreview();
-
-      }
-    );
-
-  }
-
-
-  const background =
-    $('#editorBackground');
-
-  if (
-    background &&
-    !background.dataset.bound
-  ) {
-
-    background.dataset.bound =
-      '1';
-
-    background.addEventListener(
-      'input',
-      () => {
-
-        const text =
-          $('#editorBackgroundText');
-
-        if (text) {
-
-          text.value =
-            background.value;
-
-        }
-
-        updateEditorPreview();
-
-      }
-    );
-
-  }
-
-}
-
-
-/* ---------------------------------------------------------
-   CONFIGURAR EDITOR
---------------------------------------------------------- */
-
-function setupSiteEditor() {
-
-  const form =
-    $('#siteEditorForm');
-
-
-  if (
-    form &&
-    !form.dataset.bound
-  ) {
-
-    form.dataset.bound =
-      '1';
-
-
-    form.addEventListener(
-      'submit',
-      async event => {
-
-        event.preventDefault();
-
-        await saveSiteConfig();
-
-      }
-    );
-
-  }
-
-
-  const restore =
-    $('#restoreSiteConfig');
-
-
-  if (
-    restore &&
-    !restore.dataset.bound
-  ) {
-
-    restore.dataset.bound =
-      '1';
-
-    restore.addEventListener(
-      'click',
-      restoreSiteConfig
-    );
-
-  }
-
-
-  setupEditorImageUpload();
-
-  setupEditorLivePreview();
-
-}
-
-
-/* ---------------------------------------------------------
-   LOGIN
---------------------------------------------------------- */
-
-async function handleLogin(event) {
-
-  event.preventDefault();
-
-  const message =
-    $('#message');
-
-  showMessage(
-    message,
-    'Entrando...'
-  );
-
-
-  const email =
-    $('#loginEmail')?.value.trim();
-
-  const password =
-    $('#loginPassword')?.value || '';
-
-  const remember =
-    $('#rememberMe')?.checked !== false;
-
-
-  try {
-
-    const result =
-      await api(
-        '/login',
-        {
-          method: 'POST',
-          body: {
-            email,
-            password,
-            remember
-          }
-        }
-      );
-
-
-    if (!result?.token) {
-
-      throw new Error(
-        'O servidor não retornou uma sessão válida.'
-      );
-
-    }
-
-
-    saveSession(
-      result,
-      remember
-    );
-
-
-    currentAdmin =
-      result.role === 'admin';
-
-
-    if (currentAdmin) {
-
-      showAdminApp();
-
-    } else {
-
-      currentUser =
-        result.user || null;
-
-      showUserApp();
-
-    }
-
-
-  } catch (error) {
-
-    console.error(
-      'Login:',
-      error
-    );
-
-    showMessage(
-      message,
-      error.message ||
-      'E-mail ou senha incorretos.',
-      true
-    );
-
-  }
-
-}
-
-
-/* ---------------------------------------------------------
-   REGISTRO
---------------------------------------------------------- */
-
-async function handleRegister(event) {
-
-  event.preventDefault();
-
-  const message =
-    $('#registerMessage');
-
-
-  showMessage(
-    message,
-    'Criando sua conta...'
-  );
-
-
-  const name =
-    $('#registerName')?.value.trim();
-
-  const email =
-    $('#registerEmail')?.value.trim();
-
-  const password =
-    $('#registerPassword')?.value || '';
-
-
-  if (password.length < 8) {
-
-    showMessage(
-      message,
-      'A senha precisa ter pelo menos 8 caracteres.',
-      true
-    );
-
-    return;
-
-  }
-
-
-  try {
-
-    const result =
-      await api(
-        '/users/register',
-        {
-          method: 'POST',
-          body: {
-            name,
-            email,
-            password
-          }
-        }
-      );
-
-
-    showMessage(
-      message,
-      result?.message ||
-      'Conta criada com sucesso.'
-    );
-
-
-    setTimeout(
-      () => {
-
-        showLogin();
-
-        const loginEmail =
-          $('#loginEmail');
-
-        if (loginEmail) {
-
-          loginEmail.value =
-            email;
-
-        }
-
-      },
-      700
-    );
-
-
-  } catch (error) {
-
-    console.error(
-      'Registro:',
-      error
-    );
-
-    showMessage(
-      message,
-      error.message ||
-      'Não foi possível criar a conta.',
-      true
-    );
-
-  }
-
-}
-
-
-/* ---------------------------------------------------------
-   LOGIN ADMIN
---------------------------------------------------------- */
-
-async function handleAdminLogin(event) {
-
-  event.preventDefault();
-
-  const message =
-    $('#adminLoginMessage');
-
-
-  showMessage(
-    message,
-    'Entrando...'
-  );
-
-
-  const user =
-    $('#adminUser')?.value.trim();
-
-  const password =
-    $('#adminPassword')?.value || '';
-
-
-  try {
-
-    const result =
-      await api(
-        '/login',
-        {
-          method: 'POST',
-          body: {
-            email: user,
-            password
-          }
-        }
-      );
-
-
-    if (
-      result?.role !== 'admin'
-    ) {
-
-      throw new Error(
-        'Essa conta não possui acesso administrativo.'
-      );
-
-    }
-
-
-    saveSession(
-      result,
-      true
-    );
-
-
-    showAdminApp();
-
-
-  } catch (error) {
-
-    console.error(
-      'Login admin:',
-      error
-    );
-
-    showMessage(
-      message,
-      error.message ||
-      'Credenciais administrativas inválidas.',
-      true
-    );
-
-  }
-
-}
-
-
-/* ---------------------------------------------------------
-   LOGOUT
---------------------------------------------------------- */
-
-function logout() {
-
-  clearSession();
-
-  showLogin();
-
-}
-
-
-async function logoutAdmin() {
-
-  clearSession();
-
-  showLogin();
-
-}
-/* =========================================================
-   DADOS DO USUÁRIO
-   ========================================================= */
-
-async function loadUserData() {
-  try {
-    const result = await api('/me');
-
-    currentUser = result.user || result;
-
-    const name =
-      currentUser.name ||
-      currentUser.username ||
-      currentUser.email ||
-      'Jogador';
-
-    if ($('sideName')) $('sideName').textContent = name;
-    if ($('topUser')) $('topUser').textContent = name;
-    if ($('greetingName')) {
-      $('greetingName').textContent =
-        name;
-    }
-
-    if ($('minutes')) {
-      $('minutes').textContent =
-        Number(currentUser.minutes || 0).toLocaleString('pt-BR') + ' min';
-    }
-
-    if ($('profileName')) {
-      $('profileName').value = currentUser.name || '';
-    }
-
-    if ($('profileEmail')) {
-      $('profileEmail').value = currentUser.email || '';
-    }
-
-    if ($('profileUsername')) {
-      $('profileUsername').value = currentUser.username || '';
-    }
-
-    await Promise.all([
-      loadPackages(),
-      loadServers(),
-      loadOrders(),
-      loadSupport()
-    ]);
-
-  } catch (error) {
-    console.error(error);
-    throw error;
-  }
-}
-
-
-/* =========================================================
-   PACOTES / CATÁLOGO
-   ========================================================= */
-
-async function loadPackages() {
-  try {
-    const result = await api('/packages');
-
-    packages = Array.isArray(result.packages)
-      ? result.packages
-      : [];
-
-    minutesRateCents =
-      Number(result.minutesRateCents || 0);
-
-    renderPackages();
-    renderCart();
-
-  } catch (error) {
-    console.error('Erro ao carregar pacotes:', error);
-  }
-}
-
-
-function renderPackages() {
-  const root = $('packageGrid');
-
-  if (!root) return;
-
-  if (!packages.length) {
-    root.innerHTML = `
-      <div class="panel">
-        <h3>Nenhum pacote disponível</h3>
-        <p class="muted">
-          O administrador ainda não cadastrou pacotes.
-        </p>
-      </div>
-    `;
-    return;
-  }
-
-  root.innerHTML = packages.map(pkg => `
-    <article class="package-card">
-
-      <span class="eyebrow">
-        PACOTE GAMECLOUD
-      </span>
-
-      <h3>
-        ${escapeHtml(pkg.name)}
-      </h3>
-
-      <p class="muted">
-        ${escapeHtml(
-          pkg.description ||
-          'Recursos dedicados para seu servidor.'
-        )}
-      </p>
-
-      <div class="package-price">
-        ${formatMoney(pkg.priceCents)}
-      </div>
-
-      <div class="package-specs">
-
-        <span>
-          RAM
-          <b>${Number(pkg.ram || 0)} GB</b>
-        </span>
-
-        <span>
-          vCPU
-          <b>${Number(pkg.vcpu || 0)}</b>
-        </span>
-
-        <span>
-          GPU
-          <b>${escapeHtml(pkg.gpu || '—')}</b>
-        </span>
-
-        <span>
-          Armazenamento
-          <b>${Number(pkg.storage || 0)} GB</b>
-        </span>
-
-      </div>
-
-      <button
-        class="btn primary full"
-        data-select-package="${escapeHtml(pkg.id)}"
-      >
-        Selecionar pacote
-      </button>
-
-    </article>
-  `).join('');
-}
-
-
-/* =========================================================
-   SERVIDORES
-   ========================================================= */
-
-async function loadServers() {
-  try {
-    const result = await api('/servers');
-
-    servers = Array.isArray(result.servers)
-      ? result.servers
-      : [];
-
-    renderServers();
-
-  } catch (error) {
-    console.error('Erro ao carregar servidores:', error);
-  }
-}
-
-
-function renderServers() {
-  const root = $('serversList');
-
-  if (!root) return;
-
-  if (!servers.length) {
-    root.innerHTML = `
-      <div class="panel">
-        <h3>Nenhum servidor</h3>
-        <p class="muted">
-          Você ainda não possui servidores.
-        </p>
-      </div>
-    `;
-    return;
-  }
-
-  root.innerHTML = servers.map(server => {
-
-    const online =
-      String(server.status || '').toLowerCase() === 'online';
-
-    return `
-      <article class="server-card">
-
-        <div class="server-card-top">
-
-          <div>
-
-            <span class="eyebrow">
-              ${escapeHtml(server.type || 'Servidor')}
-            </span>
-
-            <h3>
-              ${escapeHtml(server.name || 'Servidor')}
-            </h3>
-
-            <p>
-              ${escapeHtml(
-                server.userName ||
-                'Sua instância GameCloud'
-              )}
-            </p>
-
-          </div>
-
-          <span class="status">
-
-            <i class="dot ${online ? 'online' : ''}"></i>
-
-            ${escapeHtml(
-              server.status || 'offline'
-            )}
-
-          </span>
-
-        </div>
-
-        <div class="specs">
-
-          <div class="spec">
-            <small>RAM</small>
-            <strong>
-              ${Number(server.ram || 0)} GB
-            </strong>
-          </div>
-
-          <div class="spec">
-            <small>vCPU</small>
-            <strong>
-              ${Number(server.vcpu || 0)}
-            </strong>
-          </div>
-
-          <div class="spec">
-            <small>GPU</small>
-            <strong>
-              ${escapeHtml(server.gpu || '—')}
-            </strong>
-          </div>
-
-          <div class="spec">
-            <small>SSD</small>
-            <strong>
-              ${Number(server.storage || 0)} GB
-            </strong>
-          </div>
-
-        </div>
-
-        <div class="card-actions">
-
-          <button
-            class="btn primary small"
-            data-fivem-start="${escapeHtml(server.id)}"
-          >
-            Abrir FiveM
-          </button>
-
-        </div>
-
-      </article>
-    `;
-
-  }).join('');
-
-  if ($('serverCount')) {
-    $('serverCount').textContent =
-      String(servers.length);
-  }
-}
-
-
-/* =========================================================
-   CARRINHO
-   ========================================================= */
-
-function renderCart() {
-
-  const root = $('cartContent');
-
-  if (!root) return;
-
-  const pkg = packages.find(
-    item => item.id === cart.packageId
-  );
-
-  const minutes =
-    Number(cart.minutes || 0);
-
-  const packagePrice =
-    Number(pkg?.priceCents || 0);
-
-  const minutesPrice =
-    minutes * Number(minutesRateCents || 0);
-
-  const total =
-    packagePrice + minutesPrice;
-
-  if (!pkg && minutes <= 0) {
-
-    root.innerHTML = `
-      <div class="empty">
-
-        <h3>Seu carrinho está vazio</h3>
-
-        <p>
-          Escolha um pacote ou adicione tempo
-          para continuar.
-        </p>
-
-      </div>
-    `;
-
-    if ($('cartSummary')) {
-      $('cartSummary').innerHTML = `
-        <div class="summary-line">
-          <span>Total</span>
-          <b>R$ 0,00</b>
-        </div>
-      `;
-    }
-
-    if ($('continueCheckout')) {
-      $('continueCheckout').disabled = true;
-    }
-
-    return;
-  }
-
-  root.innerHTML = `
-
-    <div class="panel-head">
-
-      <div>
-        <span class="eyebrow">
-          SEU CARRINHO
-        </span>
-
-        <h2>
-          Itens selecionados
-        </h2>
-      </div>
-
-      <button
-        class="btn danger small"
-        id="clearCart"
-      >
-        Limpar
-      </button>
-
-    </div>
-
-    ${
-      pkg
-        ? `
-          <div class="summary-line">
-
-            <span>
-              ${escapeHtml(pkg.name)}
-            </span>
-
-            <b>
-              ${formatMoney(packagePrice)}
-            </b>
-
-          </div>
-        `
-        : ''
-    }
-
-    ${
-      minutes > 0
-        ? `
-          <div class="summary-line">
-
-            <span>
-              ${minutes.toLocaleString('pt-BR')} minutos
-            </span>
-
-            <b>
-              ${formatMoney(minutesPrice)}
-            </b>
-
-          </div>
-        `
-        : ''
-    }
-
-  `;
-
-  if ($('cartSummary')) {
-
-    $('cartSummary').innerHTML = `
-
-      <div class="summary-line">
-
-        <span>Pacote</span>
-
-        <b>
-          ${formatMoney(packagePrice)}
-        </b>
-
-      </div>
-
-      <div class="summary-line">
-
-        <span>Tempo</span>
-
-        <b>
-          ${formatMoney(minutesPrice)}
-        </b>
-
-      </div>
-
-      <div class="summary-line total">
-
-        <span>Total</span>
-
-        <b>
-          ${formatMoney(total)}
-        </b>
-
-      </div>
-
-    `;
-  }
-
-  if ($('continueCheckout')) {
-    $('continueCheckout').disabled = false;
-  }
-
-  $('clearCart')?.addEventListener(
-    'click',
-    () => {
-
-      cart = {
-        packageId: null,
-        minutes: 0
-      };
-
-      saveCart();
-      renderCart();
-
-    }
-  );
-}
-
-
-/* =========================================================
-   PEDIDOS
-   ========================================================= */
-
-async function loadOrders() {
-
-  try {
-
-    const result =
-      await api('/orders');
-
-    orders =
-      Array.isArray(result.orders)
-        ? result.orders
-        : [];
-
-    renderOrders();
-
-  } catch (error) {
-
-    console.error(
-      'Erro ao carregar pedidos:',
-      error
-    );
-
-  }
-}
-
-
-function renderOrders() {
-
-  const root =
-    $('ordersList');
-
-  if (!root) return;
-
-  if (!orders.length) {
-
-    root.innerHTML = `
-      <div class="panel">
-        <h3>Nenhum pedido</h3>
-        <p class="muted">
-          Seus pedidos aparecerão aqui.
-        </p>
-      </div>
-    `;
-
-    return;
-  }
-
-  root.innerHTML =
-    orders.map(order => `
-
-      <article class="order-card">
-
-        <div>
-
-          <span class="status">
-            ${escapeHtml(order.status || 'PENDENTE')}
-          </span>
-
-          <h3>
-            ${escapeHtml(
-              order.packageName ||
-              'Tempo de jogo'
-            )}
-          </h3>
-
-          <p class="muted">
-
-            ${Number(order.minutes || 0)
-              .toLocaleString('pt-BR')}
-            min
-
-            •
-
-            ${
-              order.createdAt
-                ? new Date(
-                    order.createdAt
-                  ).toLocaleString('pt-BR')
-                : ''
-            }
-
-          </p>
-
-        </div>
-
-        <strong>
-          ${formatMoney(order.totalCents)}
-        </strong>
-
-      </article>
-
-    `).join('');
-}
-
-
-/* =========================================================
-   SUPORTE
-   ========================================================= */
-
-async function loadSupport() {
-
-  try {
-
-    const result =
-      await api('/support');
-
-    tickets =
-      Array.isArray(result.tickets)
-        ? result.tickets
-        : [];
-
-    renderSupport();
-
-  } catch (error) {
-
-    console.error(
-      'Erro ao carregar suporte:',
-      error
-    );
-
-  }
-}
-
-
-function renderSupport() {
-
-  const root =
-    $('supportHistory');
-
-  if (!root) return;
-
-  if (!tickets.length) {
-
-    root.innerHTML = `
-      <div class="muted">
-        Nenhuma solicitação enviada.
-      </div>
-    `;
-
-    return;
-  }
-
-  root.innerHTML = tickets.map(ticket => `
-
-    <article class="order-card">
-
-      <div>
-
-        <span class="status">
-          ${escapeHtml(
-            ticket.status || 'ABERTO'
-          )}
-        </span>
-
-        <h3>
-          ${escapeHtml(
-            ticket.subject || 'Suporte'
-          )}
-        </h3>
-
-        <p>
-          ${escapeHtml(
-            ticket.message || ''
-          )}
-        </p>
-
-      </div>
-
-      <small>
-
-        ${
-          ticket.createdAt
-            ? new Date(
-                ticket.createdAt
-              ).toLocaleString('pt-BR')
-            : ''
-        }
-
-      </small>
-
-    </article>
-
-  `).join('');
-}
-
-
-/* =========================================================
-   PAINEL ADMINISTRADOR
-   ========================================================= */
-
-async function loadAdminData() {
-
-  try {
-
-    const result =
-      await api('/admin/overview');
-
-    adminData = result;
-
-    renderAdminDashboard(result);
-
-  } catch (error) {
-
-    console.error(
-      'Erro ao carregar painel administrativo:',
-      error
-    );
-
-    throw error;
-  }
-}
-
-
-function renderAdminDashboard(data) {
-
-  const users =
-    Array.isArray(data.users)
-      ? data.users
-      : [];
-
-  const adminServers =
-    Array.isArray(data.servers)
-      ? data.servers
-      : [];
-
-  const adminOrders =
-    Array.isArray(data.orders)
-      ? data.orders
-      : [];
-
-  const adminPackages =
-    Array.isArray(data.packages)
-      ? data.packages
-      : [];
-
-  if ($('adminUserCount')) {
-    $('adminUserCount').textContent =
-      users.length;
-  }
-
-  if ($('adminServerCount')) {
-    $('adminServerCount').textContent =
-      adminServers.length;
-  }
-
-  if ($('adminPendingCount')) {
-
-    $('adminPendingCount').textContent =
-      adminOrders.filter(
-        order =>
-          String(order.status)
-            .toUpperCase() === 'PENDENTE'
-      ).length;
-
-  }
-
-  renderAdminUsers(users);
-  renderAdminServers(adminServers);
-  renderAdminOrders(adminOrders);
-  renderAdminPackages(adminPackages);
-
-  if ($('minutesRate')) {
-
-    $('minutesRate').value =
-      (
-        Number(
-          data.minutesRateCents || 0
-        ) / 100
-      ).toFixed(2);
-
-  }
-
-  renderAdminTickets(
-    Array.isArray(data.tickets)
-      ? data.tickets
-      : []
-  );
-}
-
-
-/* =========================================================
-   ADMIN — USUÁRIOS
-   ========================================================= */
-
-function renderAdminUsers(users) {
-
-  const root =
-    $('adminUsers');
-
-  if (!root) return;
-
-  if (!users.length) {
-
-    root.innerHTML = `
-      <tr>
-        <td colspan="4">
-          Nenhum usuário cadastrado.
-        </td>
-      </tr>
-    `;
-
-    return;
-  }
-
-  root.innerHTML =
-    users.map(user => `
-
-      <tr>
-
-        <td>
-          ${escapeHtml(
-            user.name || '—'
-          )}
-        </td>
-
-        <td>
-          ${escapeHtml(
-            user.username || '—'
-          )}
-        </td>
-
-        <td>
-          ${escapeHtml(
-            user.email || '—'
-          )}
-        </td>
-
-        <td>
-          ${Number(
-            user.minutes || 0
-          ).toLocaleString('pt-BR')}
-          min
-        </td>
-
-      </tr>
-
-    `).join('');
-}
-
-
-/* =========================================================
-   ADMIN — SERVIDORES
-   ========================================================= */
-
-function renderAdminServers(list) {
-
-  const root =
-    $('adminServers');
-
-  if (!root) return;
-
-  if (!list.length) {
-
-    root.innerHTML = `
-      <div class="muted">
-        Nenhum servidor cadastrado.
-      </div>
-    `;
-
-    return;
-  }
-
-  root.innerHTML =
-    list.map(server => `
-
-      <article class="admin-server-row">
-
-        <div>
-
-          <strong>
-            ${escapeHtml(
-              server.name || 'Servidor'
-            )}
-          </strong>
-
-          <small>
-            ${escapeHtml(
-              server.type || 'FiveM'
-            )}
-
-            •
-
-            ${escapeHtml(
-              server.userName ||
-              'Sem vínculo'
-            )}
-          </small>
-
-        </div>
-
-        <div>
-
-          <span class="status">
-            ${escapeHtml(
-              server.status || 'offline'
-            )}
-          </span>
-
-          <small>
-            ${Number(server.ram || 0)} GB RAM
-            •
-            ${Number(server.vcpu || 0)} vCPU
-            •
-            ${escapeHtml(server.gpu || '—')}
-            •
-            ${Number(server.storage || 0)} GB
-          </small>
-
-        </div>
-
-        <div class="card-actions">
-
-          <button
-            class="btn small"
-            data-edit-server="${escapeHtml(server.id)}"
-          >
-            Editar
-          </button>
-
-          <button
-            class="btn danger small"
-            data-delete-server="${escapeHtml(server.id)}"
-          >
-            Excluir
-          </button>
-
-        </div>
-
-      </article>
-
-    `).join('');
-}
-
-
-/* =========================================================
-   ADMIN — PEDIDOS
-   ========================================================= */
-
-function renderAdminOrders(list) {
-
-  const root =
-    $('adminOrders');
-
-  if (!root) return;
-
-  if (!list.length) {
-
-    root.innerHTML = `
-      <div class="panel muted">
-        Nenhum pedido registrado.
-      </div>
-    `;
-
-    return;
-  }
-
-  root.innerHTML =
-    list.map(order => `
-
-      <article class="order-card">
-
-        <div>
-
-          <span class="status">
-            ${escapeHtml(
-              order.status || 'PENDENTE'
-            )}
-          </span>
-
-          <h3>
-
-            ${escapeHtml(
-              order.userName ||
-              order.email ||
-              'Usuário'
-            )}
-
-            •
-
-            ${escapeHtml(
-              order.packageName ||
-              'Tempo'
-            )}
-
-          </h3>
-
-          <p class="muted">
-
-            ${Number(
-              order.minutes || 0
-            ).toLocaleString('pt-BR')}
-            min
-
-          </p>
-
-        </div>
-
-        <div>
-
-          <strong>
-            ${formatMoney(
-              order.totalCents
-            )}
-          </strong>
-
-          ${
-            String(order.status)
-              .toUpperCase() === 'PENDENTE'
-              ? `
-                <button
-                  class="btn primary small"
-                  data-approve-order="${escapeHtml(order.id)}"
-                >
-                  Aprovar
-                </button>
-              `
-              : ''
-          }
-
-        </div>
-
-      </article>
-
-    `).join('');
-}
-
-
-/* =========================================================
-   ADMIN — CATÁLOGO
-   ========================================================= */
-
-function renderAdminPackages(list) {
-
-  const root =
-    $('adminCatalog');
-
-  if (!root) return;
-
-  if (!list.length) {
-
-    root.innerHTML = `
-      <div class="muted">
-        Nenhum pacote cadastrado.
-      </div>
-    `;
-
-    return;
-  }
-
-  root.innerHTML =
-    list.map(pkg => `
-
-      <form
-        class="panel admin-package-form"
-        data-package-id="${escapeHtml(pkg.id)}"
-      >
-
-        <div class="panel-head">
-
-          <div>
-
-            <span class="eyebrow">
-              PACOTE
-            </span>
-
-            <h2>
-              ${escapeHtml(pkg.name)}
-            </h2>
-
-            <p class="muted">
-
-              ${Number(pkg.ram || 0)} GB RAM
-
-              •
-
-              ${Number(pkg.vcpu || 0)} vCPU
-
-              •
-
-              ${escapeHtml(pkg.gpu || '—')}
-
-            </p>
-
-          </div>
-
-        </div>
-
-        <div class="field">
-
-          <label>
-            Preço
-          </label>
-
-          <input
-            name="price"
-            type="number"
-            min="0"
-            step="0.01"
-            value="${
-              (
-                Number(pkg.priceCents || 0) / 100
-              ).toFixed(2)
-            }"
-            required
-          >
-
-        </div>
-
-        <button
-          class="btn primary"
-          type="submit"
-        >
-          Salvar preço
-        </button>
-
-      </form>
-
-    `).join('');
-}
-
-
-/* =========================================================
-   ADMIN — SUPORTE
-   ========================================================= */
-
-function renderAdminTickets(list) {
-
-  const root =
-    $('adminTickets');
-
-  if (!root) return;
-
-  if (!list.length) {
-
-    root.innerHTML = `
-      <div class="muted">
-        Nenhum chamado.
-      </div>
-    `;
-
-    return;
-  }
-
-  root.innerHTML =
-    list.map(ticket => `
-
-      <article class="order-card">
-
-        <div>
-
-          <span class="status">
-            ${escapeHtml(
-              ticket.status || 'ABERTO'
-            )}
-          </span>
-
-          <h3>
-            ${escapeHtml(
-              ticket.subject || 'Suporte'
-            )}
-          </h3>
-
-          <p>
-            ${escapeHtml(
-              ticket.userName ||
-              ticket.email ||
-              ''
-            )}
-          </p>
-
-          <p class="muted">
-            ${escapeHtml(
-              ticket.message || ''
-            )}
-          </p>
-
-        </div>
-
-      </article>
-
-    `).join('');
-}
-
-
-/* =========================================================
-   ADMIN — FORMULÁRIO DE SERVIDOR
-   ========================================================= */
-
-function clearServerForm() {
-
-  const form =
-    $('serverForm');
-
-  if (form) {
-    form.reset();
-  }
-
-  if ($('serverId')) {
-    $('serverId').value = '';
-  }
-
-  if ($('serverFormTitle')) {
-    $('serverFormTitle').textContent =
-      'Criar servidor';
-  }
-}
-
-
-/* =========================================================
-   ADMIN — EVENTOS EXTRAS
-   ========================================================= */
-
-document.addEventListener(
-  'click',
-  async event => {
-
-    const editButton =
-      event.target.closest(
-        '[data-edit-server]'
-      );
-
-    if (editButton) {
-
-      const id =
-        editButton.dataset.editServer;
-
-      const server =
-        adminData?.servers?.find(
-          item => String(item.id) === String(id)
-        );
-
-      if (!server) return;
-
-      if ($('serverId'))
-        $('serverId').value =
-          server.id || '';
-
-      if ($('serverName'))
-        $('serverName').value =
-          server.name || '';
-
-      if ($('serverType'))
-        $('serverType').value =
-          server.type || 'FiveM';
-
-      if ($('serverRam'))
-        $('serverRam').value =
-          server.ram || 0;
-
-      if ($('serverVcpu'))
-        $('serverVcpu').value =
-          server.vcpu || 0;
-
-      if ($('serverGpu'))
-        $('serverGpu').value =
-          server.gpu || '';
-
-      if ($('serverStorage'))
-        $('serverStorage').value =
-          server.storage || 0;
-
-      if ($('serverStatusInput'))
-        $('serverStatusInput').value =
-          server.status || 'offline';
-
-      if ($('serverFormTitle'))
-        $('serverFormTitle').textContent =
-          'Editar servidor';
-
-      return;
-    }
-
-    const deleteButton =
-      event.target.closest(
-        '[data-delete-server]'
-      );
-
-    if (deleteButton) {
-
-      const id =
-        deleteButton.dataset.deleteServer;
-
-      if (
-        !window.confirm(
-          'Tem certeza que deseja excluir este servidor?'
-        )
-      ) {
-        return;
-      }
-
-      try {
-
-        await api(
-          `/admin/servers/${encodeURIComponent(id)}/delete`,
-          'POST',
-          {}
-        );
-
-        await loadAdminData();
-
-        say(
-          'Servidor excluído.'
-        );
-
-      } catch (error) {
-
-        say(
-          error.message,
-          true
-        );
-
-      }
-
-      return;
-    }
-
-    const approveButton =
-      event.target.closest(
-        '[data-approve-order]'
-      );
-
-    if (approveButton) {
-
-      try {
-
-        await api(
-          `/admin/orders/${encodeURIComponent(
-            approveButton.dataset.approveOrder
-          )}/approve`,
-          'POST',
-          {}
-        );
-
-        await loadAdminData();
-
-        say(
-          'Pedido aprovado.'
-        );
-
-      } catch (error) {
-
-        say(
-          error.message,
-          true
-        );
-
-      }
-
-    }
-
-  }
-);
-
-
-/* =========================================================
-   COMPATIBILIDADE COM O EDITOR
-   ========================================================= */
-
-function formatMoney(cents) {
-
-  return (
+const money = (cents) =>
+  (
     Number(cents || 0) / 100
   ).toLocaleString(
     'pt-BR',
@@ -3067,23 +109,412 @@ function formatMoney(cents) {
     }
   );
 
+
+const formatMoney = money;
+
+
+const fmtMinutes = (value) =>
+  `${Number(value || 0).toLocaleString('pt-BR')} min`;
+
+
+function escapeHtml(value) {
+
+  return String(value ?? '')
+    .replace(
+      /[&<>"']/g,
+      (character) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[character])
+    );
+
 }
 
 
 /* =========================================================
-   FINALIZAÇÃO
+   MENSAGENS
    ========================================================= */
 
-window.GameCloudEditor = {
-  getConfig: () =>
-    JSON.parse(
-      JSON.stringify(siteConfig)
-    ),
+function say(text, error = false) {
 
-  setConfig: config => {
+  const node =
+    $('message');
+
+  if (!node) return;
+
+  node.textContent =
+    text || '';
+
+  node.className =
+    `message${error ? ' error' : ''}`;
+
+  if (text) {
+
+    window.setTimeout(
+      () => {
+
+        if (
+          node.textContent === text
+        ) {
+          node.textContent = '';
+        }
+
+      },
+      7000
+    );
+
+  }
+
+}
+
+
+function showMessage(
+  element,
+  message,
+  error = false
+) {
+
+  if (!element) return;
+
+  if (typeof element === 'string') {
+    element = $(element);
+  }
+
+  if (!element) return;
+
+  element.textContent =
+    message || '';
+
+  element.className =
+    `message${error ? ' error' : ''}`;
+
+}
+
+
+/* =========================================================
+   API
+   ========================================================= */
+
+async function api(
+  route,
+  method = 'GET',
+  body
+) {
+
+  const headers = {};
+
+  if (token) {
+
+    headers.Authorization =
+      `Bearer ${token}`;
+
+  }
+
+  if (body !== undefined) {
+
+    headers['Content-Type'] =
+      'application/json';
+
+  }
+
+  const response =
+    await fetch(
+      API_BASE +
+        String(route).replace(
+          /^\/+/,
+          ''
+        ),
+      {
+        method,
+        headers,
+        credentials:
+          'same-origin',
+        body:
+          body === undefined
+            ? undefined
+            : JSON.stringify(body)
+      }
+    );
+
+  let result = {};
+
+  try {
+
+    result =
+      await response.json();
+
+  } catch {
+
+    result = {};
+
+  }
+
+  if (!response.ok) {
+
+    throw new Error(
+      result.error ||
+      result.message ||
+      `Erro ${response.status}`
+    );
+
+  }
+
+  return result;
+
+}
+
+
+/* =========================================================
+   SESSÃO
+   ========================================================= */
+
+function
+   /* =========================================================
+   EDITOR VISUAL — PARTE 2
+   ========================================================= */
+
+function editorConfigFromForm() {
+
+  const config =
+    mergeSiteConfig(
+      siteConfig
+    );
+
+  config.brandName =
+    getEditorValue(
+      'editorBrandName',
+      config.brandName
+    ).trim();
+
+  config.authTitle =
+    getEditorValue(
+      'editorAuthTitle',
+      config.authTitle
+    ).trim();
+
+  config.authText =
+    getEditorValue(
+      'editorAuthText',
+      config.authText
+    ).trim();
+
+  config.home.eyebrow =
+    getEditorValue(
+      'editorHomeEyebrow',
+      config.home.eyebrow
+    ).trim();
+
+  config.home.title =
+    getEditorValue(
+      'editorHomeTitle',
+      config.home.title
+    ).trim();
+
+  config.home.text =
+    getEditorValue(
+      'editorHomeText',
+      config.home.text
+    ).trim();
+
+  config.home.primaryButton =
+    getEditorValue(
+      'editorPrimaryButton',
+      config.home.primaryButton
+    ).trim();
+
+  config.home.secondaryButton =
+    getEditorValue(
+      'editorSecondaryButton',
+      config.home.secondaryButton
+    ).trim();
+
+  config.theme.gold =
+    getEditorValue(
+      'editorGold',
+      config.theme.gold
+    ).trim();
+
+  config.theme.background =
+    getEditorValue(
+      'editorBackground',
+      config.theme.background
+    ).trim();
+
+  const heroImage =
+    getEditorValue(
+      'editorHeroImageValue',
+      config.home.heroImage
+    ).trim();
+
+  if (heroImage) {
+
+    config.home.heroImage =
+      heroImage;
+
+  }
+
+  return config;
+
+}
+
+
+/* =========================================================
+   EDITOR — PRÉ-VISUALIZAÇÃO
+   ========================================================= */
+
+function updateEditorPreview() {
+
+  const config =
+    editorConfigFromForm();
+
+  const previewEyebrow =
+    $('previewEyebrow');
+
+  const previewTitle =
+    $('previewTitle');
+
+  const previewText =
+    $('previewText');
+
+  const previewPrimary =
+    $('previewPrimary');
+
+  const previewSecondary =
+    $('previewSecondary');
+
+  const previewHero =
+    $('editorPreviewHero');
+
+  if (previewEyebrow) {
+
+    previewEyebrow.textContent =
+      config.home.eyebrow;
+
+  }
+
+  if (previewTitle) {
+
+    const name =
+      currentUser?.name ||
+      currentUser?.username ||
+      'Miguel';
+
+    previewTitle.textContent =
+      config.home.title.replace(
+        /\{name\}/g,
+        name
+      );
+
+  }
+
+  if (previewText) {
+
+    previewText.textContent =
+      config.home.text;
+
+  }
+
+  if (previewPrimary) {
+
+    previewPrimary.textContent =
+      config.home.primaryButton;
+
+  }
+
+  if (previewSecondary) {
+
+    previewSecondary.textContent =
+      config.home.secondaryButton;
+
+  }
+
+  if (previewHero) {
+
+    if (
+      config.home.heroImage
+    ) {
+
+      previewHero.style.backgroundImage =
+        `url("${config.home.heroImage}")`;
+
+    } else {
+
+      previewHero.style.backgroundImage =
+        'none';
+
+    }
+
+  }
+
+}
+
+
+/* =========================================================
+   EDITOR — STATUS
+   ========================================================= */
+
+function setEditorStatus(
+  message,
+  error = false
+) {
+
+  const node =
+    $('editorStatus');
+
+  if (!node) return;
+
+  node.textContent =
+    message || '';
+
+  node.className =
+    `message${error ? ' error' : ''}`;
+
+}
+
+
+/* =========================================================
+   EDITOR — SALVAR
+   ========================================================= */
+
+async function saveSiteConfig() {
+
+  const button =
+    $('saveSiteConfig');
+
+  try {
+
+    const config =
+      editorConfigFromForm();
+
+    setEditorStatus(
+      'Salvando alterações...'
+    );
+
+    if (button) {
+
+      button.disabled = true;
+      button.textContent =
+        'Salvando...';
+
+    }
+
+    const result =
+      await api(
+        '/admin/site-config',
+        'POST',
+        {
+          siteConfig: config
+        }
+      );
 
     siteConfig =
-      mergeSiteConfig(config);
+      mergeSiteConfig(
+        result.siteConfig ||
+        config
+      );
 
     applySiteConfig(
       siteConfig
@@ -3094,44 +525,1981 @@ window.GameCloudEditor = {
     );
 
     updateEditorPreview();
+
+    setEditorStatus(
+      '✓ Alterações salvas com sucesso.'
+    );
+
+    say(
+      'Configuração do aplicativo atualizada.'
+    );
+
+  } catch (error) {
+
+    console.error(
+      'Erro ao salvar editor:',
+      error
+    );
+
+    setEditorStatus(
+      error.message ||
+        'Não foi possível salvar.',
+      true
+    );
+
+    say(
+      error.message ||
+        'Erro ao salvar.',
+      true
+    );
+
+  } finally {
+
+    if (button) {
+
+      button.disabled = false;
+      button.textContent =
+        'Salvar alterações';
+
+    }
+
   }
+
+}
+
+
+/* =========================================================
+   EDITOR — RESTAURAR PADRÃO
+   ========================================================= */
+
+async function restoreSiteConfig() {
+
+  const confirmed =
+    window.confirm(
+      'Restaurar o aplicativo para a configuração padrão?'
+    );
+
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+
+    const
+       /* =========================================================
+   IMPÉRIO GAMECLOUD
+   APP.JS — PARTE 3/3
+   ========================================================= */
+
+
+/* =========================================================
+   EDITOR VISUAL — CONFIGURAÇÃO
+   ========================================================= */
+
+function editorConfigFromForm() {
+
+  return mergeSiteConfig({
+
+    brandName:
+      getEditorValue(
+        'editorBrandName',
+        defaultSiteConfig.brandName
+      ),
+
+    authTitle:
+      getEditorValue(
+        'editorAuthTitle',
+        defaultSiteConfig.authTitle
+      ),
+
+    authText:
+      getEditorValue(
+        'editorAuthText',
+        defaultSiteConfig.authText
+      ),
+
+    home: {
+
+      eyebrow:
+        getEditorValue(
+          'editorHomeEyebrow',
+          defaultSiteConfig.home.eyebrow
+        ),
+
+      title:
+        getEditorValue(
+          'editorHomeTitle',
+          defaultSiteConfig.home.title
+        ),
+
+      text:
+        getEditorValue(
+          'editorHomeText',
+          defaultSiteConfig.home.text
+        ),
+
+      primaryButton:
+        getEditorValue(
+          'editorPrimaryButton',
+          defaultSiteConfig.home.primaryButton
+        ),
+
+      secondaryButton:
+        getEditorValue(
+          'editorSecondaryButton',
+          defaultSiteConfig.home.secondaryButton
+        ),
+
+      heroImage:
+        getEditorValue(
+          'editorHeroImageValue',
+          defaultSiteConfig.home.heroImage
+        )
+
+    },
+
+    theme: {
+
+      gold:
+        getEditorValue(
+          'editorGold',
+          defaultSiteConfig.theme.gold
+        ),
+
+      background:
+        getEditorValue(
+          'editorBackground',
+          defaultSiteConfig.theme.background
+        )
+
+    }
+
+  });
+
+}
+
+
+/* =========================================================
+   EDITOR — STATUS
+   ========================================================= */
+
+function setEditorStatus(
+  message,
+  error = false
+) {
+
+  const element =
+    $('editorStatus');
+
+  if (!element) return;
+
+  element.textContent =
+    message || '';
+
+  element.className =
+    `message${error ? ' error' : ''}`;
+
+}
+
+
+/* =========================================================
+   EDITOR — PRÉ-VISUALIZAÇÃO
+   ========================================================= */
+
+function updateEditorPreview() {
+
+  const config =
+    editorConfigFromForm();
+
+  if ($('previewEyebrow')) {
+
+    $('previewEyebrow').textContent =
+      config.home.eyebrow;
+
+  }
+
+  if ($('previewTitle')) {
+
+    $('previewTitle').textContent =
+      config.home.title.replace(
+        /\{name\}/g,
+        'Miguel'
+      );
+
+  }
+
+  if ($('previewText')) {
+
+    $('previewText').textContent =
+      config.home.text;
+
+  }
+
+  if ($('previewPrimary')) {
+
+    $('previewPrimary').textContent =
+      config.home.primaryButton;
+
+  }
+
+  if ($('previewSecondary')) {
+
+    $('previewSecondary').textContent =
+      config.home.secondaryButton;
+
+  }
+
+  if ($('editorPreviewHero')) {
+
+    if (config.home.heroImage) {
+
+      $('editorPreviewHero').style.backgroundImage =
+        `url("${config.home.heroImage}")`;
+
+    } else {
+
+      $('editorPreviewHero').style.backgroundImage =
+        '';
+
+    }
+
+  }
+
+  const preview =
+    $('editorPreview');
+
+  if (preview) {
+
+    preview.style.setProperty(
+      '--gold',
+      config.theme.gold
+    );
+
+    preview.style.setProperty(
+      '--bg',
+      config.theme.background
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   EDITOR — SALVAR
+   ========================================================= */
+
+async function saveSiteConfig() {
+
+  try {
+
+    setEditorStatus(
+      'Salvando alterações...'
+    );
+
+    const config =
+      editorConfigFromForm();
+
+    const result =
+      await api(
+        '/admin/site-config',
+        'POST',
+        {
+          siteConfig: config
+        }
+      );
+
+    siteConfig =
+      mergeSiteConfig(
+        result.siteConfig ||
+        config
+      );
+
+    applySiteConfig(
+      siteConfig
+    );
+
+    fillSiteEditor(
+      siteConfig
+    );
+
+    updateEditorPreview();
+
+    setEditorStatus(
+      '✓ Alterações salvas com sucesso.'
+    );
+
+    say(
+      'Alterações do aplicativo salvas.'
+    );
+
+  } catch (error) {
+
+    console.error(
+      'Erro ao salvar editor:',
+      error
+    );
+
+    setEditorStatus(
+      error.message ||
+        'Não foi possível salvar.',
+      true
+    );
+
+    say(
+      error.message,
+      true
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   EDITOR — RESTAURAR PADRÃO
+   ========================================================= */
+
+async function restoreSiteConfig() {
+
+  const confirmed =
+    window.confirm(
+      'Restaurar a aparência padrão do aplicativo?'
+    );
+
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+
+    const config =
+      cloneDefaultSiteConfig();
+
+    siteConfig =
+      config;
+
+    fillSiteEditor(
+      config
+    );
+
+    applySiteConfig(
+      config
+    );
+
+    updateEditorPreview();
+
+    setEditorStatus(
+      'Configuração padrão carregada. Clique em "Salvar" para publicar.'
+    );
+
+  } catch (error) {
+
+    setEditorStatus(
+      error.message,
+      true
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   EDITOR — UPLOAD DA IMAGEM
+   ========================================================= */
+
+function setupEditorImageUpload() {
+
+  const input =
+    $('editorHeroUpload');
+
+  if (!input) return;
+
+  input.addEventListener(
+    'change',
+    () => {
+
+      const file =
+        input.files?.[0];
+
+      if (!file) {
+        return;
+      }
+
+      /*
+       * Limite para evitar colocar arquivos
+       * gigantes dentro da configuração.
+       */
+
+      if (
+        file.size >
+        750 * 1024
+      ) {
+
+        setEditorStatus(
+          'A imagem deve ter no máximo 750 KB.',
+          true
+        );
+
+        input.value = '';
+
+        return;
+      }
+
+      if (
+        !file.type.startsWith(
+          'image/'
+        )
+      ) {
+
+        setEditorStatus(
+          'Selecione uma imagem válida.',
+          true
+        );
+
+        input.value = '';
+
+        return;
+      }
+
+      const reader =
+        new FileReader();
+
+      reader.onload = () => {
+
+        const dataUrl =
+          String(
+            reader.result || ''
+          );
+
+        const hidden =
+          $('editorHeroImageValue');
+
+        if (hidden) {
+
+          hidden.value =
+            dataUrl;
+
+        }
+
+        const preview =
+          $('editorPreviewHero');
+
+        if (preview) {
+
+          preview.style.backgroundImage =
+            `url("${dataUrl}")`;
+
+        }
+
+        updateEditorPreview();
+
+        setEditorStatus(
+          'Imagem carregada. Clique em "Salvar alterações" para publicar.'
+        );
+
+      };
+
+      reader.onerror = () => {
+
+        setEditorStatus(
+          'Não foi possível carregar a imagem.',
+          true
+        );
+
+      };
+
+      reader.readAsDataURL(
+        file
+      );
+
+    }
+  );
+
+}
+
+
+/* =========================================================
+   EDITOR — PRÉVIA EM TEMPO REAL
+   ========================================================= */
+
+function setupEditorLivePreview() {
+
+  const fields = [
+
+    'editorBrandName',
+    'editorAuthTitle',
+    'editorAuthText',
+    'editorHomeEyebrow',
+    'editorHomeTitle',
+    'editorHomeText',
+    'editorPrimaryButton',
+    'editorSecondaryButton',
+    'editorGold',
+    'editorBackground',
+    'editorHeroImageValue'
+
+  ];
+
+  fields.forEach(
+    id => {
+
+      const element =
+        $(id);
+
+      if (!element) {
+        return;
+      }
+
+      element.addEventListener(
+        'input',
+        updateEditorPreview
+      );
+
+      element.addEventListener(
+        'change',
+        updateEditorPreview
+      );
+
+    }
+  );
+
+}
+
+
+/* =========================================================
+   EDITOR — INICIALIZAÇÃO
+   ========================================================= */
+
+function setupSiteEditor() {
+
+  const saveButton =
+    $('saveSiteConfig');
+
+  if (saveButton) {
+
+    saveButton.addEventListener(
+      'click',
+      saveSiteConfig
+    );
+
+  }
+
+  const restoreButton =
+    $('restoreSiteConfig');
+
+  if (restoreButton) {
+
+    restoreButton.addEventListener(
+      'click',
+      restoreSiteConfig
+    );
+
+  }
+
+  setupEditorImageUpload();
+
+  setupEditorLivePreview();
+
+}
+
+
+/* =========================================================
+   LOGIN
+   ========================================================= */
+
+async function handleLogin(
+  event
+) {
+
+  event.preventDefault();
+
+  try {
+
+    const result =
+      await api(
+        '/login',
+        'POST',
+        {
+          email:
+            $('email')?.value.trim(),
+
+          password:
+            $('password')?.value || ''
+        }
+      );
+
+    setSession(
+      result,
+      $('remember')?.checked !== false
+    );
+
+    await loadUserData();
+
+    showUserApp();
+
+    say(
+      'Login realizado com sucesso.'
+    );
+
+  } catch (error) {
+
+    say(
+      error.message,
+      true
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   CADASTRO
+   ========================================================= */
+
+async function handleRegister(
+  event
+) {
+
+  event.preventDefault();
+
+  try {
+
+    const result =
+      await api(
+        '/users/register',
+        'POST',
+        {
+          name:
+            $('rname')?.value.trim(),
+
+          email:
+            $('remail')?.value.trim(),
+
+          password:
+            $('rpassword')?.value || ''
+        }
+      );
+
+    showLogin();
+
+    if ($('email')) {
+
+      $('email').value =
+        $('remail')?.value.trim() || '';
+
+    }
+
+    say(
+      result.message ||
+        'Conta criada com sucesso.'
+    );
+
+  } catch (error) {
+
+    say(
+      error.message,
+      true
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   LOGIN DO ADMINISTRADOR
+   ========================================================= */
+
+async function handleAdminLogin(
+  event
+) {
+
+  event.preventDefault();
+
+  try {
+
+    const result =
+      await api(
+        '/admin/login',
+        'POST',
+        {
+          username:
+            $('adminUsername')?.value.trim(),
+
+          password:
+            $('adminPassword')?.value || ''
+        }
+      );
+
+    if (
+      result.role &&
+      result.role !== 'admin'
+    ) {
+
+      throw new Error(
+        'Esta conta não possui acesso administrativo.'
+      );
+
+    }
+
+    setSession(
+      result,
+      $('adminRemember')?.checked !== false
+    );
+
+    showAdminApp();
+
+    await loadAdminData();
+
+    await loadSiteConfig();
+
+    say(
+      'Painel administrativo aberto.'
+    );
+
+  } catch (error) {
+
+    say(
+      error.message,
+      true
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   LOGOUT
+   ========================================================= */
+
+async function logout() {
+
+  try {
+
+    await api(
+      '/logout',
+      'POST',
+      {}
+    );
+
+  } catch {
+    /*
+     * A sessão pode já ter expirado.
+     */
+  }
+
+  token = '';
+  role = '';
+  currentUser = null;
+
+  clearStoredSession();
+
+  showLogin();
+
+  say(
+    'Você saiu da sua conta.'
+  );
+
+}
+
+
+async function logoutAdmin() {
+
+  await logout();
+
+}
+
+
+/* =========================================================
+   ADMIN — CARREGAR DADOS
+   ========================================================= */
+
+async function loadAdminData() {
+
+  const result =
+    await api(
+      '/admin/overview'
+    );
+
+  adminData =
+    result;
+
+  renderAdminDashboard(
+    result
+  );
+
+}
+
+
+/* =========================================================
+   FORMULÁRIOS
+   ========================================================= */
+
+function wireForms() {
+
+  $('loginForm')?.addEventListener(
+    'submit',
+    handleLogin
+  );
+
+  $('registerForm')?.addEventListener(
+    'submit',
+    handleRegister
+  );
+
+  $('adminLoginForm')?.addEventListener(
+    'submit',
+    handleAdminLogin
+  );
+
+
+  /*
+   * Perfil
+   */
+
+  $('profileForm')?.addEventListener(
+    'submit',
+    async event => {
+
+      event.preventDefault();
+
+      try {
+
+        const result =
+          await api(
+            '/me/profile',
+            'POST',
+            {
+              name:
+                $('profileName')?.value.trim()
+            }
+          );
+
+        currentUser =
+          result.user ||
+          result;
+
+        applySiteConfig(
+          siteConfig
+        );
+
+        say(
+          'Perfil atualizado.'
+        );
+
+      } catch (error) {
+
+        say(
+          error.message,
+          true
+        );
+
+      }
+
+    }
+  );
+
+
+  /*
+   * Suporte
+   */
+
+  $('supportForm')?.addEventListener(
+    'submit',
+    async event => {
+
+      event.preventDefault();
+
+      try {
+
+        await api(
+          '/support',
+          'POST',
+          {
+            subject:
+              $('supportSubject')?.value.trim(),
+
+            message:
+              $('supportMessage')?.value.trim()
+          }
+        );
+
+        $('supportForm').reset();
+
+        await loadSupport();
+
+        say(
+          'Solicitação enviada para a equipe.'
+        );
+
+      } catch (error) {
+
+        say(
+          error.message,
+          true
+        );
+
+      }
+
+    }
+  );
+
+
+  /*
+   * Formulário de servidor
+   */
+
+  $('serverForm')?.addEventListener(
+    'submit',
+    async event => {
+
+      event.preventDefault();
+
+      try {
+
+        const id =
+          $('serverId')?.value;
+
+        const body = {
+
+          id:
+            id || undefined,
+
+          name:
+            $('serverName')?.value.trim(),
+
+          type:
+            $('serverType')?.value,
+
+          userId:
+            $('serverUser')?.value || '',
+
+          ram:
+            Number(
+              $('serverRam')?.value || 0
+            ),
+
+          vcpu:
+            Number(
+              $('serverVcpu')?.value || 0
+            ),
+
+          gpu:
+            $('serverGpu')?.value.trim(),
+
+          storage:
+            Number(
+              $('serverStorage')?.value || 0
+            ),
+
+          status:
+            $('serverStatusInput')?.value ||
+            'offline'
+
+        };
+
+        await api(
+          '/admin/servers',
+          'POST',
+          body
+        );
+
+        clearServerForm();
+
+        await loadAdminData();
+
+        say(
+          'Servidor salvo.'
+        );
+
+      } catch (error) {
+
+        say(
+          error.message,
+          true
+        );
+
+      }
+
+    }
+  );
+
+
+  /*
+   * Preço por minuto
+   */
+
+  $('minutePriceForm')?.addEventListener(
+    'submit',
+    async event => {
+
+      event.preventDefault();
+
+      try {
+
+        const value =
+          Number(
+            $('minutesRate')?.value || 0
+          );
+
+        await api(
+          '/admin/minutes-price',
+          'POST',
+          {
+            priceCents:
+              Math.round(
+                value * 100
+              )
+          }
+        );
+
+        await loadAdminData();
+
+        say(
+          'Preço por minuto atualizado.'
+        );
+
+      } catch (error) {
+
+        say(
+          error.message,
+          true
+        );
+
+      }
+
+    }
+  );
+
+
+  /*
+   * Adicionar minutos
+   */
+
+  $('timeForm')?.addEventListener(
+    'submit',
+    async event => {
+
+      event.preventDefault();
+
+      try {
+
+        await api(
+          '/admin/time/add',
+          'POST',
+          {
+            email:
+              $('playerEmail')?.value.trim(),
+
+            minutes:
+              Number(
+                $('addMinutes')?.value || 0
+              )
+          }
+        );
+
+        $('timeForm').reset();
+
+        await loadAdminData();
+
+        say(
+          'Minutos adicionados.'
+        );
+
+      } catch (error) {
+
+        say(
+          error.message,
+          true
+        );
+
+      }
+
+    }
+  );
+
+}
+
+
+/* =========================================================
+   AÇÕES DOS BOTÕES
+   ========================================================= */
+
+function wireActions() {
+
+  document.addEventListener(
+    'click',
+    async event => {
+
+      const pageButton =
+        event.target.closest(
+          '[data-page]'
+        );
+
+      if (
+        pageButton &&
+        pageButton.dataset.page
+      ) {
+
+        showUserSection(
+          pageButton.dataset.page
+        );
+
+        return;
+      }
+
+
+      const button =
+        event.target.closest(
+          'button'
+        );
+
+      if (!button) {
+        return;
+      }
+
+
+      try {
+
+        /*
+         * Navegação de autenticação
+         */
+
+        if (
+          button.id ===
+          'showRegister'
+        ) {
+
+          showRegister();
+
+          return;
+        }
+
+        if (
+          button.id ===
+          'showForgot'
+        ) {
+
+          showForgot();
+
+          return;
+        }
+
+        if (
+          button.id ===
+          'showAdmin'
+        ) {
+
+          showAdminLogin();
+
+          return;
+        }
+
+
+        if (
+          [
+            'backToLogin',
+            'backLoginFromRegister',
+            'backLoginFromForgot',
+            'backLoginFromReset'
+          ].includes(
+            button.id
+          )
+        ) {
+
+          showLogin();
+
+          return;
+        }
+
+
+        /*
+         * Logout
+         */
+
+        if (
+          button.id ===
+            'logoutUser' ||
+          button.id ===
+            'logoutAdmin'
+        ) {
+
+          await logout();
+
+          return;
+        }
+
+
+        /*
+         * Seleção de pacote
+         */
+
+        if (
+          button.dataset
+            .selectPackage
+        ) {
+
+          chosenPackage =
+            button.dataset
+              .selectPackage;
+
+          say(
+            'Pacote selecionado.'
+          );
+
+          return;
+        }
+
+
+        /*
+         * Adicionar ao carrinho
+         */
+
+        if (
+          button.id ===
+          'addToCart'
+        ) {
+
+          const minutes =
+            Number(
+              $('minuteChoice')?.value ||
+              0
+            );
+
+          if (
+            !chosenPackage &&
+            minutes <= 0
+          ) {
+
+            throw new Error(
+              'Selecione um pacote ou adicione minutos.'
+            );
+
+          }
+
+          cart = {
+
+            packageId:
+              chosenPackage,
+
+            minutes:
+              minutes
+
+          };
+
+          saveCart();
+
+          renderCart();
+
+          showUserSection(
+            'cart'
+          );
+
+          say(
+            'Itens adicionados ao carrinho.'
+          );
+
+          return;
+        }
+
+
+        /*
+         * Finalizar compra
+         */
+
+        if (
+          button.id ===
+          'continueCheckout'
+        ) {
+
+          const pkg =
+            catalog.find(
+              item =>
+                item.id ===
+                cart.packageId
+            );
+
+          if (
+            !pkg &&
+            !Number(cart.minutes || 0)
+          ) {
+
+            throw new Error(
+              'Seu carrinho está vazio.'
+            );
+
+          }
+
+          const result =
+            await api(
+              '/orders',
+              'POST',
+              {
+                packageId:
+                  pkg?.id || null,
+
+                minutes:
+                  Number(
+                    cart.minutes || 0
+                  )
+              }
+            );
+
+          cart = {
+
+            packageId:
+              null,
+
+            minutes:
+              0
+
+          };
+
+          saveCart();
+
+          currentOrder =
+            result.order;
+
+          showUserSection(
+            'payment'
+          );
+
+          say(
+            'Pedido criado com sucesso.'
+          );
+
+          return;
+        }
+
+
+        /*
+         * Atualizar painel admin
+         */
+
+        if (
+          button.id ===
+          'refreshAdmin'
+        ) {
+
+          await loadAdminData();
+
+          say(
+            'Dados atualizados.'
+          );
+
+          return;
+        }
+
+
+        /*
+         * Abas do administrador
+         */
+
+        if (
+          button.dataset
+            .adminPage
+        ) {
+
+          showAdminSection(
+            button.dataset.adminPage
+          );
+
+          return;
+        }
+
+
+        /*
+         * Editar servidor
+         */
+
+        if (
+          button.dataset
+            .editServer
+        ) {
+
+          const server =
+            adminData?.servers?.find(
+              item =>
+                String(item.id) ===
+                String(
+                  button.dataset.editServer
+                )
+            );
+
+          if (!server) {
+            return;
+          }
+
+          if ($('serverId'))
+            $('serverId').value =
+              server.id || '';
+
+          if ($('serverName'))
+            $('serverName').value =
+              server.name || '';
+
+          if ($('serverType'))
+            $('serverType').value =
+              server.type || 'FiveM';
+
+          if ($('serverUser'))
+            $('serverUser').value =
+              server.userId || '';
+
+          if ($('serverRam'))
+            $('serverRam').value =
+              server.ram || 0;
+
+          if ($('serverVcpu'))
+            $('serverVcpu').value =
+              server.vcpu || 0;
+
+          if ($('serverGpu'))
+            $('serverGpu').value =
+              server.gpu || '';
+
+          if ($('serverStorage'))
+            $('serverStorage').value =
+              server.storage || 0;
+
+          if ($('serverStatusInput'))
+            $('serverStatusInput').value =
+              server.status || 'offline';
+
+          if ($('serverFormTitle'))
+            $('serverFormTitle').textContent =
+              'Editar servidor';
+
+          return;
+        }
+
+
+        /*
+         * Cancelar edição
+         */
+
+        if (
+          button.id ===
+          'cancelServerEdit'
+        ) {
+
+          clearServerForm();
+
+          return;
+        }
+
+
+        /*
+         * Excluir servidor
+         */
+
+        if (
+          button.dataset
+            .deleteServer
+        ) {
+
+          if (
+            !window.confirm(
+              'Excluir este servidor?'
+            )
+          ) {
+
+            return;
+
+          }
+
+          await api(
+            `/admin/servers/${encodeURIComponent(
+              button.dataset.deleteServer
+            )}/delete`,
+            'POST',
+            {}
+          );
+
+          await loadAdminData();
+
+          say(
+            'Servidor excluído.'
+          );
+
+          return;
+        }
+
+
+        /*
+         * Aprovar pedido
+         */
+
+        if (
+          button.dataset
+            .approveOrder
+        ) {
+
+          await api(
+            `/admin/orders/${encodeURIComponent(
+              button.dataset.approveOrder
+            )}/approve`,
+            'POST',
+            {}
+          );
+
+          await loadAdminData();
+
+          say(
+            'Pedido aprovado.'
+          );
+
+          return;
+        }
+
+
+        /*
+         * Stream
+         */
+
+        if (
+          button.id ===
+          'startStream'
+        ) {
+
+          const result =
+            await api(
+              '/admin/stream/start',
+              'POST',
+              {}
+            );
+
+          await loadStream();
+
+          say(
+            result.message ||
+              'Streaming iniciado.'
+          );
+
+          return;
+        }
+
+
+        if (
+          button.id ===
+          'stopStream'
+        ) {
+
+          const result =
+            await api(
+              '/admin/stream/stop',
+              'POST',
+              {}
+            );
+
+          await loadStream();
+
+          say(
+            result.message ||
+              'Streaming parado.'
+          );
+
+          return;
+        }
+
+
+        /*
+         * FiveM do usuário
+         */
+
+        if (
+          button.dataset
+            .fivemStart !==
+          undefined
+        ) {
+
+          const result =
+            await api(
+              '/stream/start',
+              'POST',
+              {}
+            );
+
+          await loadStream();
+
+          say(
+            result.message ||
+              'Streaming iniciado.'
+          );
+
+          return;
+        }
+
+      } catch (error) {
+
+        console.error(error);
+
+        say(
+          error.message,
+          true
+        );
+
+      }
+
+    }
+  );
+
+
+  /*
+   * Alteração de preço dos pacotes
+   */
+
+  document.addEventListener(
+    'submit',
+    async event => {
+
+      const form =
+        event.target.closest(
+          '.admin-package-form'
+        );
+
+      if (!form) {
+        return;
+      }
+
+      event.preventDefault();
+
+      try {
+
+        const price =
+          Number(
+            form.elements.price.value ||
+            0
+          );
+
+        await api(
+          '/admin/packages',
+          'POST',
+          {
+            id:
+              form.dataset.packageId,
+
+            priceCents:
+              Math.round(
+                price * 100
+              )
+          }
+        );
+
+        await loadAdminData();
+
+        say(
+          'Preço do pacote atualizado.'
+        );
+
+      } catch (error) {
+
+        say(
+          error.message,
+          true
+        );
+
+      }
+
+    }
+  );
+
+
+  /*
+   * Minutos
+   */
+
+  $('minuteChoice')?.addEventListener(
+    'input',
+    () => {
+
+      const element =
+        $('minuteChoice');
+
+      if (
+        element &&
+        $('minuteChoiceValue')
+      ) {
+
+        $('minuteChoiceValue')
+          .textContent =
+          Number(
+            element.value || 0
+          ).toLocaleString(
+            'pt-BR'
+          );
+
+      }
+
+    }
+  );
+
+}
+
+
+/* =========================================================
+   FORMULÁRIO DE RECUPERAÇÃO
+   ========================================================= */
+
+function setupRecoveryForms() {
+
+  $('forgotForm')?.addEventListener(
+    'submit',
+    async event => {
+
+      event.preventDefault();
+
+      try {
+
+        const result =
+          await api(
+            '/forgot-password',
+            'POST',
+            {
+              email:
+                $('femail')?.value.trim()
+            }
+          );
+
+        say(
+          result.message ||
+            'Solicitação processada.'
+        );
+
+      } catch (error) {
+
+        say(
+          error.message,
+          true
+        );
+
+      }
+
+    }
+  );
+
+
+  $('resetForm')?.addEventListener(
+    'submit',
+    async event => {
+
+      event.preventDefault();
+
+      try {
+
+        const params =
+          new URLSearchParams(
+            window.location.search
+          );
+
+        const resetToken =
+          params.get('token') ||
+          params.get('reset') ||
+          '';
+
+        const result =
+          await api(
+            '/reset-password',
+            'POST',
+            {
+              token:
+                resetToken,
+
+              password:
+                $('newpassword')?.value ||
+                ''
+            }
+          );
+
+        showLogin();
+
+        say(
+          result.message ||
+            'Senha atualizada.'
+        );
+
+      } catch (error) {
+
+        say(
+          error.message,
+          true
+        );
+
+      }
+
+    }
+  );
+
+}
+
+
+/* =========================================================
+   RESTAURAR SESSÃO
+   ========================================================= */
+
+async function restoreSession() {
+
+  if (!token) {
+
+    showLogin();
+
+    return;
+
+  }
+
+  try {
+
+    if (
+      role === 'admin'
+    ) {
+
+      showAdminApp();
+
+      await loadAdminData();
+
+      await loadSiteConfig();
+
+      return;
+
+    }
+
+    role =
+      'player';
+
+    await loadUserData();
+
+    showUserApp();
+
+  } catch (error) {
+
+    console.warn(
+      'Sessão expirada:',
+      error
+    );
+
+    token = '';
+    role = '';
+
+    clearStoredSession();
+
+    showLogin();
+
+  }
+
+}
+
+
+/* =========================================================
+   INICIALIZAÇÃO DO APLICATIVO
+   ========================================================= */
+
+document.addEventListener(
+  'DOMContentLoaded',
+  () => {
+
+    try {
+
+      wireForms();
+
+      wireActions();
+
+      setupUserNavigation();
+
+      setupAdminNavigation();
+
+      setupSiteEditor();
+
+      setupRecoveryForms();
+
+      /*
+       * Carrega configuração visual
+       * pública mesmo antes do login.
+       */
+
+      loadSiteConfig()
+        .catch(
+          error =>
+            console.warn(
+              'Configuração visual:',
+              error
+            )
+        );
+
+      /*
+       * Restaura sessão existente.
+       */
+
+      restoreSession()
+        .catch(
+          error => {
+
+            console.error(
+              'Falha ao iniciar GameCloud:',
+              error
+            );
+
+            showLogin();
+
+          }
+        );
+
+    } catch (error) {
+
+      console.error(
+        'Erro fatal ao iniciar app.js:',
+        error
+      );
+
+      showLogin();
+
+    }
+
+  }
+);
+
+
+/* =========================================================
+   API PÚBLICA DO EDITOR
+   ========================================================= */
+
+window.GameCloudEditor = {
+
+  getConfig() {
+
+    return JSON.parse(
+      JSON.stringify(
+        siteConfig
+      )
+    );
+
+  },
+
+  setConfig(config) {
+
+    siteConfig =
+      mergeSiteConfig(
+        config
+      );
+
+    applySiteConfig(
+      siteConfig
+    );
+
+    fillSiteEditor(
+      siteConfig
+    );
+
+    updateEditorPreview();
+
+  }
+
 };
-/*
-=========================================================
-FIM DO APP.JS
-=========================================================
 
-Agora o app.js possui:
 
-✓ Login
-✓ Cadastro
-✓ Recuperação de senha
-✓ Painel do usuário
-✓ Catálogo
-✓ Carrinho
-✓ Pedidos
-✓ Servidores
-✓ FiveM
-✓ Suporte
-✓ Painel administrativo
-✓ Gerenciamento de servidores
-✓ Gerenciamento de pedidos
-✓ Gerenciamento de catálogo
-✓ Editor visual
-✓ Alteração de textos
-✓ Alteração de cores
-✓ Alteração de banner/imagem
-✓ Pré-visualização
-✓ Salvar configuração
-✓ Restaurar configuração padrão
-
-IMPORTANTE:
-O editor visual depende das novas rotas do server.js:
-GET  /api/site-config
-POST /api/admin/site-config
-
-Portanto, o próximo arquivo que precisamos corrigir é o
-SERVER.JS. Sem essas rotas, o botão "Salvar alterações"
-do editor não terá onde guardar as mudanças.
-=========================================================
-*/
+/* =========================================================
+   FIM DO APP.JS
+   ========================================================= */
