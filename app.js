@@ -3312,7 +3312,7 @@ function setupAuthenticationNavigation() {
   $('#logoutAdmin')?.addEventListener('click', logoutAdmin);
 }
 
-function restoreSession() {
+async function restoreSession() {
 
   session = loadStoredSession();
 
@@ -3321,12 +3321,37 @@ function restoreSession() {
     return;
   }
 
-  currentAdmin = session.role === 'admin';
+  try {
+    const result = await api('/me');
 
-  if (currentAdmin) {
-    showAdminApp();
-  } else {
-    showUserApp();
+    if (!result?.ok) {
+      throw new Error('Sessão inválida.');
+    }
+
+    session = {
+      ...session,
+      role: result.role,
+      user: result.user || null
+    };
+
+    const storage = localStorage.getItem('gamecloud_session')
+      ? localStorage
+      : sessionStorage;
+
+    storage.setItem('gamecloud_session', JSON.stringify(session));
+
+    currentAdmin = result.role === 'admin';
+
+    if (currentAdmin) {
+      showAdminApp();
+    } else {
+      currentUser = result.user || null;
+      showUserApp();
+    }
+  } catch (error) {
+    console.warn('Sessão não pôde ser restaurada:', error);
+    clearSession();
+    showLogin();
   }
 }
 
