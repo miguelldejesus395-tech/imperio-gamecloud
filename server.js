@@ -49,42 +49,12 @@ const defaultPackages = [
   {
     id: 'basico',
     name: 'Básico',
-    priceCents: 1000,
+    priceCents: 0,
     ram: 4,
     vcpu: 2,
     gpu: 'GPU básica',
     storage: 50,
-    description: 'Uma base leve para começar no FiveM.'
-  },
-  {
-    id: 'intermediario',
-    name: 'Intermediário',
-    priceCents: 2000,
-    ram: 8,
-    vcpu: 4,
-    gpu: 'GPU melhor',
-    storage: 100,
-    description: 'Mais espaço para seu servidor crescer.'
-  },
-  {
-    id: 'avancado',
-    name: 'Avançado',
-    priceCents: 3000,
-    ram: 16,
-    vcpu: 6,
-    gpu: 'GPU avançada',
-    storage: 200,
-    description: 'Desempenho para comunidades maiores.'
-  },
-  {
-    id: 'premium',
-    name: 'Premium',
-    priceCents: 5000,
-    ram: 32,
-    vcpu: 8,
-    gpu: 'GPU mais potente',
-    storage: 400,
-    description: 'A configuração mais completa do catálogo.'
+    description: 'Configuração única do GameCloud. A cobrança é somente por minutos.'
   }
 ];
 
@@ -92,10 +62,10 @@ const defaultPackages = [
 // O cliente paga somente pelo tempo.
 const standardServerProfile = {
   type: 'FiveM RP',
-  ram: 16,
-  vcpu: 8,
-  gpu: 'GameCloud',
-  storage: 200
+  ram: 4,
+  vcpu: 2,
+  gpu: 'GPU básica',
+  storage: 50
 };
 
 function readDatabase() {
