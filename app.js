@@ -57,6 +57,15 @@ let orders = [];
 
 let tickets = [];
 
+let adminData = {
+  users: [],
+  servers: [],
+  orders: [],
+  packages: [],
+  tickets: [],
+  minutesRateCents: 0
+};
+
 let selectedPackage = null;
 
 let selectedMinutes = 0;
@@ -3328,6 +3337,29 @@ function setupMainCommerceEvents() {
   }
 
   document.addEventListener('click', event => {
+    const addMinutesButton = event.target.closest('[data-add-minutes-email]');
+    if (addMinutesButton) {
+      event.preventDefault();
+
+      const email = String(
+        addMinutesButton.dataset.addMinutesEmail || ''
+      ).trim();
+
+      const emailInput = $('#playerEmail');
+      if (emailInput) {
+        emailInput.value = email;
+        emailInput.focus();
+      }
+
+      const minutesInput = $('#addMinutes');
+      if (minutesInput && !minutesInput.value) {
+        minutesInput.value = '60';
+      }
+
+      say(`Usuário ${email} selecionado. Informe a quantidade de minutos.`);
+      return;
+    }
+
     const fivem = event.target.closest('[data-fivem-start]');
     if (fivem) {
       event.preventDefault();
