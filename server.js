@@ -209,6 +209,30 @@ function passwordMatches(user, password) {
 const sessions = new Map();
 const resetTokens = new Map();
 const agentCommands = [];
+const streamAgents = new Map();
+
+function getAgentId(req) {
+  return String(req.headers['x-stream-agent-id'] || 'PC-GAMECLOUD').trim() || 'PC-GAMECLOUD';
+}
+
+function touchAgent(req, status, message) {
+  const id = getAgentId(req);
+  const previous = streamAgents.get(id) || {};
+  const agent = {
+    id,
+    status,
+    game: 'FiveM',
+    lastHeartbeat: new Date().toISOString(),
+    message: message || previous.message || 'Agente conectado.'
+  };
+  streamAgents.set(id, agent);
+  return agent;
+}
+
+function publicAgents() {
+  return Array.from(streamAgents.values())
+    .sort((a,b) => a.id.localeCompare(b.id));
+}
 
 const seedPassword =
   passwordFields(USER_PASSWORD);
@@ -759,12 +783,11 @@ const server =
           return;
         }
 
+        const agent = touchAgent(req, 'online', 'PC de streaming conectado.');
         streaming.status = 'online';
-        streaming.lastHeartbeat =
-          new Date().toISOString();
-
-        streaming.message =
-          'PC de streaming conectado.';
+        streaming.host = agent.id;
+        streaming.lastHeartbeat = agent.lastHeartbeat;
+        streaming.message = agent.message;
 
         json(
           res,
@@ -789,12 +812,11 @@ const server =
           return;
         }
 
+        const agent = touchAgent(req, 'offline', 'PC de streaming offline.');
         streaming.status = 'offline';
-        streaming.lastHeartbeat =
-          new Date().toISOString();
-
-        streaming.message =
-          'PC de streaming offline.';
+        streaming.host = agent.id;
+        streaming.lastHeartbeat = agent.lastHeartbeat;
+        streaming.message = agent.message;
 
         json(
           res,
@@ -2282,6 +2304,12 @@ const server =
 
               userId,
 
+              agentId:
+                String(
+                  body.agentId ||
+                  'PC-GAMECLOUD'
+                ).trim() || 'PC-GAMECLOUD',
+
               ram,
 
               vcpu,
@@ -2962,6 +2990,21 @@ const server =
 
             return;
           }
+        }
+
+        /*
+         * ADMIN — LISTAR AGENTES
+         */
+        if (
+          method === 'GET' &&
+          pathname === '/api/admin/stream/agents'
+        ) {
+          if (!getAdminSession(req)) {
+            unauthorized(res);
+            return;
+          }
+          json(res, 200, { ok: true, agents: publicAgents() });
+          return;
         }
 
         /*
