@@ -3431,6 +3431,13 @@ function setupMainCommerceEvents() {
       return;
     }
 
+    const addToCartButton = event.target.closest('#addToCart');
+    if (addToCartButton) {
+      event.preventDefault();
+      addMinutesToCart();
+      return;
+    }
+
     const fivem = event.target.closest('[data-fivem-start]');
     if (fivem) {
       event.preventDefault();
