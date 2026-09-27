@@ -1166,49 +1166,23 @@
                 </div>
 
                 <div class="field">
-                  <label for="serverRam">
-                    RAM (GB)
-                  </label>
-
-                  <input id="serverRam"
-                         type="number"
-                         min="1"
-                         max="512"
-                         required>
+                  <label for="serverRam">RAM (GB)</label>
+                  <input id="serverRam" type="number" value="4" readonly required>
                 </div>
 
                 <div class="field">
-                  <label for="serverVcpu">
-                    vCPU
-                  </label>
-
-                  <input id="serverVcpu"
-                         type="number"
-                         min="1"
-                         max="128"
-                         required>
+                  <label for="serverVcpu">vCPU</label>
+                  <input id="serverVcpu" type="number" value="2" readonly required>
                 </div>
 
                 <div class="field">
-                  <label for="serverGpu">
-                    GPU
-                  </label>
-
-                  <input id="serverGpu"
-                         maxlength="100"
-                         required>
+                  <label for="serverGpu">GPU / cGPU</label>
+                  <input id="serverGpu" value="GPU básica" maxlength="100" readonly required>
                 </div>
 
                 <div class="field">
-                  <label for="serverStorage">
-                    Armazenamento (GB)
-                  </label>
-
-                  <input id="serverStorage"
-                         type="number"
-                         min="1"
-                         max="10000"
-                         required>
+                  <label for="serverStorage">Armazenamento (GB)</label>
+                  <input id="serverStorage" type="number" value="50" readonly required>
                 </div>
 
                 <div class="field">
