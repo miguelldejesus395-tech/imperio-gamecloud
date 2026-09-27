@@ -16,6 +16,59 @@ const SESSION_TTL = 1000 * 60 * 60 * 24 * 7;
 const RESET_TTL = 1000 * 60 * 30;
 const DATA_FILE = path.join(__dirname, 'data', 'gamecloud.json');
 
+const defaultSiteConfig = {
+  brandName: 'IMPÉRIO GAMECLOUD',
+
+  authTitle: 'Acesse sua conta',
+
+  authText:
+    'Entre para gerenciar seus servidores e seu tempo de jogo.',
+function readDatabase() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+
+    return {
+      users: Array.isArray(parsed.users) ? parsed.users : null,
+
+      servers: Array.isArray(parsed.servers)
+        ? parsed.servers
+        : [],
+
+      packages:
+        Array.isArray(parsed.packages) && parsed.packages.length
+          ? parsed.packages
+          : defaultPackages,
+
+      orders: Array.isArray(parsed.orders)
+        ? parsed.orders
+        : [],
+
+      tickets: Array.isArray(parsed.tickets)
+        ? parsed.tickets
+        : [],
+
+      minutesRateCents:
+        Number.isSafeInteger(parsed.minutesRateCents)
+          ? parsed.minutesRateCents
+          : 10,
+
+      siteConfig:
+        parsed.siteConfig && typeof parsed.siteConfig === 'object'
+          ? parsed.siteConfig
+          : defaultSiteConfig
+    };
+  } catch (error) {
+    return {
+      users: null,
+      servers: [],
+      packages: defaultPackages,
+      orders: [],
+      tickets: [],
+      minutesRateCents: 10,
+      siteConfig: defaultSiteConfig
+    };
+  }
+}
 const defaultPackages = [
   { id: 'basico', name: 'Básico', priceCents: 1000, ram: 4, vcpu: 2, gpu: 'GPU básica', storage: 50, description: 'Uma base leve para começar no FiveM.' },
   { id: 'intermediario', name: 'Intermediário', priceCents: 2000, ram: 8, vcpu: 4, gpu: 'GPU melhor', storage: 100, description: 'Mais espaço para seu servidor crescer.' },
@@ -23,29 +76,30 @@ const defaultPackages = [
   { id: 'premium', name: 'Premium', priceCents: 5000, ram: 32, vcpu: 8, gpu: 'GPU mais potente', storage: 400, description: 'A configuração mais completa do catálogo.' }
 ];
 
-function readDatabase() {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-    return {
-      users: Array.isArray(parsed.users) ? parsed.users : null,
-      servers: Array.isArray(parsed.servers) ? parsed.servers : [],
-      packages: Array.isArray(parsed.packages) && parsed.packages.length ? parsed.packages : defaultPackages,
-      orders: Array.isArray(parsed.orders) ? parsed.orders : [],
-      tickets: Array.isArray(parsed.tickets) ? parsed.tickets : [],
-      minutesRateCents: Number.isSafeInteger(parsed.minutesRateCents) ? parsed.minutesRateCents : 10
-    };
-  } catch (error) {
-    return { users: null, servers: [], packages: defaultPackages, orders: [], tickets: [], minutesRateCents: 10 };
-  }
-}
-
 const database = readDatabase();
-function saveDatabase() {
+  function saveDatabase() {
   fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
+
   const temporary = DATA_FILE + '.tmp';
-  fs.writeFileSync(temporary, JSON.stringify({
-    users, servers, packages, orders, tickets, minutesRateCents: database.minutesRateCents
-  }, null, 2), { mode: 0o600 });
+
+  fs.writeFileSync(
+    temporary,
+    JSON.stringify(
+      {
+        users,
+        servers,
+        packages,
+        orders,
+        tickets,
+        minutesRateCents: database.minutesRateCents,
+        siteConfig: database.siteConfig
+      },
+      null,
+      2
+    ),
+    { mode: 0o600 }
+  );
+
   fs.renameSync(temporary, DATA_FILE);
 }
 
