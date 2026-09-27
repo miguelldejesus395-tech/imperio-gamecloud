@@ -23,6 +23,28 @@ const defaultSiteConfig = {
 
   authText:
     'Entre para gerenciar seus servidores e seu tempo de jogo.',
+
+  home: {
+    eyebrow: 'Império GameCloud • FiveM',
+
+    title: 'Olá, {name}.',
+
+    text:
+      'Seu próximo mundo começa aqui. Acompanhe o tempo, gerencie seus servidores e monte sua configuração.',
+
+    primaryButton: 'Explorar pacotes',
+
+    secondaryButton: 'Meus servidores',
+
+    heroImage: 'imperio-usuario.png'
+  },
+
+  theme: {
+    gold: '#f2c94c',
+    background: '#090c12'
+  }
+};
+
 function readDatabase() {
   try {
     const parsed = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
