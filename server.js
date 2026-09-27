@@ -697,6 +697,83 @@ const server = http.createServer(async (req, res) => {
   }
 
   /*
+   * CONFIGURAÇÃO VISUAL PÚBLICA
+   */
+  if (method === 'GET' && pathname === '/api/site-config') {
+    json(res, 200, {
+      ok: true,
+      siteConfig: database.siteConfig || defaultSiteConfig
+    });
+    return;
+  }
+
+  if (method === 'POST' && pathname === '/api/admin/site-config') {
+    const admin = getAdminSession(req);
+
+    if (!admin) {
+      unauthorized(res);
+      return;
+    }
+
+    try {
+      const body = await readBody(req);
+      const input = body.siteConfig;
+
+      if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        badRequest(res, 'Informe uma configuração visual válida.');
+        return;
+      }
+
+      const text = (value, fallback, maxLength) => {
+        if (typeof value !== 'string') return fallback;
+        return value.trim().slice(0, maxLength) || fallback;
+      };
+      const color = (value, fallback) =>
+        typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value.trim())
+          ? value.trim()
+          : fallback;
+      const previous = database.siteConfig || defaultSiteConfig;
+      const home = input.home && typeof input.home === 'object' ? input.home : {};
+      const theme = input.theme && typeof input.theme === 'object' ? input.theme : {};
+      const heroImage = text(home.heroImage, previous.home.heroImage, 1050000);
+
+      if (
+        heroImage !== 'imperio-usuario.png' &&
+        !/^data:image\/(png|jpeg|webp);base64,[a-z0-9+/=]+$/i.test(heroImage)
+      ) {
+        badRequest(res, 'A imagem da tela inicial deve ser PNG, JPG ou WEBP.');
+        return;
+      }
+
+      database.siteConfig = {
+        brandName: text(input.brandName, defaultSiteConfig.brandName, 80),
+        authTitle: text(input.authTitle, defaultSiteConfig.authTitle, 100),
+        authText: text(input.authText, defaultSiteConfig.authText, 300),
+        home: {
+          eyebrow: text(home.eyebrow, defaultSiteConfig.home.eyebrow, 100),
+          title: text(home.title, defaultSiteConfig.home.title, 140),
+          text: text(home.text, defaultSiteConfig.home.text, 400),
+          primaryButton: text(home.primaryButton, defaultSiteConfig.home.primaryButton, 50),
+          secondaryButton: text(home.secondaryButton, defaultSiteConfig.home.secondaryButton, 50),
+          heroImage
+        },
+        theme: {
+          gold: color(theme.gold, defaultSiteConfig.theme.gold),
+          background: color(theme.background, defaultSiteConfig.theme.background)
+        }
+      };
+
+      saveDatabase();
+      json(res, 200, { ok: true, siteConfig: database.siteConfig });
+      return;
+    } catch (error) {
+      console.error('Erro ao salvar configuração visual:', error);
+      serverError(res, 'Não foi possível salvar a configuração visual.');
+      return;
+    }
+  }
+
+  /*
    * DADOS DO USUÁRIO LOGADO
    */
   if (
