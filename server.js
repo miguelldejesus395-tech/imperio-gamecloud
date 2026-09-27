@@ -1013,24 +1013,21 @@ const server =
 
       if (
         method === 'POST' &&
-        pathname === '/api/login'
+        pathname === '/api/admin/login'
       ) {
         let body;
 
         try {
           body = await readBody(req);
         } catch (error) {
-          badRequest(
-            res,
-            error.message
-          );
+          badRequest(res, error.message);
           return;
         }
 
         const login =
           String(
-            body.email ||
             body.username ||
+            body.email ||
             body.login ||
             ''
           ).trim();
@@ -1042,16 +1039,6 @@ const server =
             ''
           );
 
-        const remember =
-          Boolean(
-            body.remember
-          );
-
-
-      if (
-        method === 'POST' &&
-        pathname === '/api/admin/login'
-      ) {
         if (
           login === ADMIN_USER &&
           password === ADMIN_PASSWORD
@@ -1104,6 +1091,43 @@ const server =
 
         return;
       }
+
+      if (
+        method === 'POST' &&
+        pathname === '/api/login'
+      ) {
+        let body;
+
+        try {
+          body = await readBody(req);
+        } catch (error) {
+          badRequest(
+            res,
+            error.message
+          );
+          return;
+        }
+
+        const login =
+          String(
+            body.email ||
+            body.username ||
+            body.login ||
+            ''
+          ).trim();
+
+        const password =
+          String(
+            body.password ||
+            body.senha ||
+            ''
+          );
+
+        const remember =
+          Boolean(
+            body.remember
+          );
+
 
         const user =
           findUserByLogin(login);
