@@ -2183,29 +2183,18 @@ const server =
                     body.userId
                   );
 
+            // Configuração única: sempre usa o perfil básico antigo.
             const ram =
-              Number(
-                body.ram ??
-                  standardServerProfile.ram
-              );
+              standardServerProfile.ram;
 
             const vcpu =
-              Number(
-                body.vcpu ??
-                  standardServerProfile.vcpu
-              );
+              standardServerProfile.vcpu;
 
             const storage =
-              Number(
-                body.storage ??
-                  standardServerProfile.storage
-              );
+              standardServerProfile.storage;
 
             const gpu =
-              String(
-                body.gpu ||
-                  standardServerProfile.gpu
-              ).trim();
+              standardServerProfile.gpu;
 
             const status =
               String(
