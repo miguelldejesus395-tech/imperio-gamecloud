@@ -442,6 +442,11 @@ function showAdminSection(id) {
 }
 
 
+function setupAdminAgents() {
+  $('#refreshAdminAgents')?.addEventListener('click', loadAdminAgents);
+  loadAdminAgents();
+}
+
 function setupAdminNavigation() {
 
   $$('.admin-tab').forEach(button => {
@@ -2606,6 +2611,33 @@ function renderAdminUsers(users) {
 }
 
 
+function renderAdminAgents(agents) {
+  const root = $('adminAgents');
+  if (!root) return;
+  if (!agents.length) {
+    root.innerHTML = '<div class="muted">Nenhum computador/agente conectado.</div>';
+    return;
+  }
+  root.innerHTML = agents.map(agent => `
+    <article class="admin-server-row">
+      <div>
+        <strong>${escapeHtml(agent.id)}</strong>
+        <small>FiveM • heartbeat: ${escapeHtml(agent.lastHeartbeat || '—')}</small>
+      </div>
+      <div><span class="status">${escapeHtml(agent.status)}</span></div>
+    </article>
+  `).join('');
+}
+
+async function loadAdminAgents() {
+  try {
+    const result = await api('/admin/stream/agents');
+    renderAdminAgents(result.agents || []);
+  } catch (error) {
+    console.warn('Agentes:', error);
+  }
+}
+
 /* =========================================================
    ADMIN — SERVIDORES
    ========================================================= */
@@ -3011,6 +3043,10 @@ document.addEventListener(
         $('serverType').value =
           server.type || 'FiveM';
 
+      if ($('serverAgent'))
+        $('serverAgent').value =
+          server.agentId || 'PC-GAMECLOUD';
+
       if ($('serverRam'))
         $('serverRam').value =
           server.ram || 0;
@@ -3371,6 +3407,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupMainCommerceEvents();
   setupUserNavigation();
   setupAdminNavigation();
+  setupAdminAgents();
   setupSiteEditor();
   setupRecoveryForms();
   loadSiteConfig();
