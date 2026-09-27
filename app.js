@@ -1812,6 +1812,7 @@ async function loadPackages() {
       Number(result.minutesRateCents || 0);
 
     renderPackages();
+    renderSelectionSummary();
     renderCart();
 
   } catch (error) {
@@ -1822,76 +1823,26 @@ async function loadPackages() {
 
 function renderPackages() {
   const root = $('packageGrid');
-
   if (!root) return;
 
-  if (!packages.length) {
-    root.innerHTML = `
-      <div class="panel">
-        <h3>Nenhum pacote disponível</h3>
-        <p class="muted">
-          O administrador ainda não cadastrou pacotes.
-        </p>
-      </div>
-    `;
-    return;
-  }
-
-  root.innerHTML = packages.map(pkg => `
-    <article class="package-card">
-
-      <span class="eyebrow">
-        PACOTE GAMECLOUD
-      </span>
-
-      <h3>
-        ${escapeHtml(pkg.name)}
-      </h3>
-
+  root.innerHTML = `
+    <article class="package-card" style="grid-column:1/-1">
+      <span class="eyebrow">SERVIDOR GAMECLOUD</span>
+      <h3>Um único servidor. Você paga somente pelos minutos.</h3>
       <p class="muted">
-        ${escapeHtml(
-          pkg.description ||
-          'Recursos dedicados para seu servidor.'
-        )}
+        Não existem planos de RAM, vCPU, GPU ou armazenamento para escolher.
+        Seu servidor FiveM é criado automaticamente quando o primeiro pedido
+        de minutos for aprovado.
       </p>
-
       <div class="package-price">
-        ${formatMoney(pkg.priceCents)}
+        ${formatMoney(minutesRateCents)} <small>/ minuto</small>
       </div>
-
-      <div class="package-specs">
-
-        <span>
-          RAM
-          <b>${Number(pkg.ram || 0)} GB</b>
-        </span>
-
-        <span>
-          vCPU
-          <b>${Number(pkg.vcpu || 0)}</b>
-        </span>
-
-        <span>
-          GPU
-          <b>${escapeHtml(pkg.gpu || '—')}</b>
-        </span>
-
-        <span>
-          Armazenamento
-          <b>${Number(pkg.storage || 0)} GB</b>
-        </span>
-
+      <div class="notice green">
+        Configuração do servidor definida pelo GameCloud. A cobrança é feita
+        exclusivamente pelo tempo comprado.
       </div>
-
-      <button
-        class="btn primary full"
-        data-select-package="${escapeHtml(pkg.id)}"
-      >
-        Selecionar pacote
-      </button>
-
     </article>
-  `).join('');
+  `;
 }
 
 
@@ -2033,39 +1984,18 @@ function renderServers() {
    ========================================================= */
 
 function renderCart() {
-
   const root = $('cartContent');
-
   if (!root) return;
 
-  const pkg = packages.find(
-    item => item.id === cart.packageId
-  );
+  const minutes = Number(cart.minutes || 0);
+  const rate = Number(minutesRateCents || 0);
+  const total = minutes * rate;
 
-  const minutes =
-    Number(cart.minutes || 0);
-
-  const packagePrice =
-    Number(pkg?.priceCents || 0);
-
-  const minutesPrice =
-    minutes * Number(minutesRateCents || 0);
-
-  const total =
-    packagePrice + minutesPrice;
-
-  if (!pkg && minutes <= 0) {
-
+  if (!Number.isSafeInteger(minutes) || minutes < 1) {
     root.innerHTML = `
       <div class="empty">
-
         <h3>Seu carrinho está vazio</h3>
-
-        <p>
-          Escolha um pacote ou adicione tempo
-          para continuar.
-        </p>
-
+        <p>Escolha quantos minutos deseja comprar.</p>
       </div>
     `;
 
@@ -2081,105 +2011,40 @@ function renderCart() {
     if ($('continueCheckout')) {
       $('continueCheckout').disabled = true;
     }
-
     return;
   }
 
   root.innerHTML = `
-
     <div class="panel-head">
-
       <div>
-        <span class="eyebrow">
-          SEU CARRINHO
-        </span>
-
-        <h2>
-          Itens selecionados
-        </h2>
+        <span class="eyebrow">SEU CARRINHO</span>
+        <h2>Tempo GameCloud</h2>
       </div>
-
-      <button
-        class="btn danger small"
-        id="clearCart"
-      >
+      <button class="btn danger small" id="clearCart" type="button">
         Limpar
       </button>
-
     </div>
 
-    ${
-      pkg
-        ? `
-          <div class="summary-line">
+    <div class="summary-line">
+      <span>${minutes.toLocaleString('pt-BR')} minutos</span>
+      <b>${formatMoney(total)}</b>
+    </div>
 
-            <span>
-              ${escapeHtml(pkg.name)}
-            </span>
-
-            <b>
-              ${formatMoney(packagePrice)}
-            </b>
-
-          </div>
-        `
-        : ''
-    }
-
-    ${
-      minutes > 0
-        ? `
-          <div class="summary-line">
-
-            <span>
-              ${minutes.toLocaleString('pt-BR')} minutos
-            </span>
-
-            <b>
-              ${formatMoney(minutesPrice)}
-            </b>
-
-          </div>
-        `
-        : ''
-    }
-
+    <div class="notice green" style="margin-top:14px">
+      Compra somente de tempo. Nenhum pacote de hardware será cobrado.
+    </div>
   `;
 
   if ($('cartSummary')) {
-
     $('cartSummary').innerHTML = `
-
       <div class="summary-line">
-
-        <span>Pacote</span>
-
-        <b>
-          ${formatMoney(packagePrice)}
-        </b>
-
+        <span>${minutes.toLocaleString('pt-BR')} minutos</span>
+        <b>${formatMoney(total)}</b>
       </div>
-
-      <div class="summary-line">
-
-        <span>Tempo</span>
-
-        <b>
-          ${formatMoney(minutesPrice)}
-        </b>
-
-      </div>
-
       <div class="summary-line total">
-
         <span>Total</span>
-
-        <b>
-          ${formatMoney(total)}
-        </b>
-
+        <b>${formatMoney(total)}</b>
       </div>
-
     `;
   }
 
@@ -2187,20 +2052,207 @@ function renderCart() {
     $('continueCheckout').disabled = false;
   }
 
-  $('clearCart')?.addEventListener(
-    'click',
-    () => {
+  $('clearCart')?.addEventListener('click', () => {
+    cart = { packageId: null, minutes: 0 };
+    selectedPackage = null;
+    selectedMinutes = 0;
+    saveCart();
+    renderCart();
+  });
+}
 
-      cart = {
-        packageId: null,
-        minutes: 0
-      };
+/* =========================================================
+   COMPRA DE MINUTOS
+   ========================================================= */
 
-      saveCart();
-      renderCart();
+function renderSelectionSummary() {
+  const root = $('selectionSummary');
+  const choice = Number($('minuteChoice')?.value || 0);
+  const rate = Number(minutesRateCents || 0);
+  const total = choice * rate;
 
+  if ($('minutesRateLabel')) {
+    $('minutesRateLabel').textContent =
+      `Preço atual: ${formatMoney(rate)} por minuto.`;
+  }
+
+  if (!root) return;
+
+  if (!Number.isSafeInteger(choice) || choice < 1) {
+    root.innerHTML = `
+      <div class="empty">
+        Informe a quantidade de minutos.
+      </div>
+    `;
+    return;
+  }
+
+  root.innerHTML = `
+    <div class="summary-line">
+      <span>Tempo</span>
+      <b>${choice.toLocaleString('pt-BR')} min</b>
+    </div>
+    <div class="summary-line total">
+      <span>Total</span>
+      <b>${formatMoney(total)}</b>
+    </div>
+  `;
+}
+
+function addMinutesToCart() {
+  const minutes = Number($('minuteChoice')?.value || 0);
+
+  if (!Number.isSafeInteger(minutes) || minutes < 1 || minutes > 50000) {
+    say('Informe entre 1 e 50.000 minutos.', true);
+    return;
+  }
+
+  cart = {
+    packageId: null,
+    minutes
+  };
+
+  selectedPackage = null;
+  selectedMinutes = minutes;
+
+  saveCart();
+  renderCart();
+  showUserSection('cart');
+}
+
+async function createMinutesOrder() {
+  const minutes = Number(cart.minutes || 0);
+
+  if (!Number.isSafeInteger(minutes) || minutes < 1) {
+    say('Escolha os minutos antes de continuar.', true);
+    showUserSection('buy');
+    return;
+  }
+
+  const panel = $('paymentPanel');
+  if (panel) {
+    panel.innerHTML = '<p class="muted">Criando pedido...</p>';
+  }
+
+  try {
+    const result = await api('/orders', {
+      method: 'POST',
+      body: { minutes }
+    });
+
+    const order = result.order || {};
+
+    if (panel) {
+      panel.innerHTML = `
+        <div class="notice green">
+          <strong>Pedido criado com sucesso.</strong><br>
+          ${minutes.toLocaleString('pt-BR')} minutos —
+          ${formatMoney(order.totalCents || minutes * minutesRateCents)}.
+        </div>
+        <p class="muted" style="margin-top:14px">
+          O pedido ficará pendente até a confirmação do pagamento pelo administrador.
+        </p>
+        <div class="card-actions">
+          <button class="btn primary" data-page="orders" type="button">
+            Ver meus pedidos
+          </button>
+          <button class="btn" data-page="home" type="button">
+            Voltar ao início
+          </button>
+        </div>
+      `;
     }
-  );
+
+    cart = { packageId: null, minutes: 0 };
+    selectedMinutes = 0;
+    selectedPackage = null;
+    saveCart();
+    await loadOrders();
+    await loadUserData();
+
+  } catch (error) {
+    if (panel) {
+      panel.innerHTML = `
+        <div class="notice red">
+          ${escapeHtml(error.message || 'Não foi possível criar o pedido.')}
+        </div>
+      `;
+    }
+  }
+}
+
+/* =========================================================
+   STREAMING / FIVEM
+   ========================================================= */
+
+async function loadStreamStatus() {
+  try {
+    const result = await api('/stream/status');
+    const stream = result.streaming || {};
+    const status = String(stream.status || 'offline');
+
+    if ($('streamStatus')) {
+      $('streamStatus').innerHTML =
+        `<i class="dot ${status === 'online' ? 'online' : ''}"></i>
+         ${escapeHtml(status)}`;
+    }
+
+    if ($('streamMessage')) {
+      $('streamMessage').textContent =
+        stream.message || 'Aguardando o PC de streaming.';
+    }
+
+    if ($('playerMiniStatus')) {
+      $('playerMiniStatus').textContent =
+        status === 'online' ? 'Online' : 'Offline';
+    }
+
+    if ($('topOnlineText')) {
+      $('topOnlineText').textContent =
+        status === 'online' ? 'Online' : 'Offline';
+    }
+
+    if ($('topOnlineDot')) {
+      $('topOnlineDot').classList.toggle(
+        'online',
+        status === 'online'
+      );
+    }
+
+    return stream;
+  } catch (error) {
+    console.warn('Status do streaming:', error);
+    return null;
+  }
+}
+
+async function startFiveM(serverId) {
+  try {
+    const result = await api('/stream/start', {
+      method: 'POST',
+      body: { serverId }
+    });
+
+    say(result.message || 'Solicitação enviada.');
+    await loadStreamStatus();
+    showUserSection('fivem');
+  } catch (error) {
+    say(error.message || 'Não foi possível iniciar o FiveM.', true);
+  }
+}
+
+async function stopFiveM() {
+  try {
+    const result = await api('/stream/stop', {
+      method: 'POST',
+      body: {}
+    });
+
+    say(result.message || 'Solicitação enviada.');
+    await loadStreamStatus();
+  } catch (error) {
+    say(error.message || 'Não foi possível parar o FiveM.', true);
+  }
 }
 
 
@@ -3001,8 +3053,7 @@ document.addEventListener(
 
         await api(
           `/admin/servers/${encodeURIComponent(id)}/delete`,
-          'POST',
-          {}
+          { method: 'POST', body: {} }
         );
 
         await loadAdminData();
@@ -3036,8 +3087,7 @@ document.addEventListener(
           `/admin/orders/${encodeURIComponent(
             approveButton.dataset.approveOrder
           )}/approve`,
-          'POST',
-          {}
+          { method: 'POST', body: {} }
         );
 
         await loadAdminData();
@@ -3060,6 +3110,148 @@ document.addEventListener(
   }
 );
 
+
+/* =========================================================
+   EVENTOS DO FLUXO PRINCIPAL
+   ========================================================= */
+
+function setupMainCommerceEvents() {
+  if ($('minuteChoice') && !$('minuteChoice').dataset.bound) {
+    $('minuteChoice').dataset.bound = '1';
+    $('minuteChoice').addEventListener('input', renderSelectionSummary);
+    $('minuteChoice').addEventListener('change', renderSelectionSummary);
+  }
+
+  if ($('addToCart') && !$('addToCart').dataset.bound) {
+    $('addToCart').dataset.bound = '1';
+    $('addToCart').addEventListener('click', addMinutesToCart);
+  }
+
+  if ($('continueCheckout') && !$('continueCheckout').dataset.bound) {
+    $('continueCheckout').dataset.bound = '1';
+    $('continueCheckout').addEventListener('click', () => {
+      showUserSection('payment');
+      const panel = $('paymentPanel');
+      if (panel) {
+        const minutes = Number(cart.minutes || 0);
+        const total = minutes * Number(minutesRateCents || 0);
+        panel.innerHTML = `
+          <div class="panel-head">
+            <div>
+              <span class="eyebrow">CONFIRMAÇÃO</span>
+              <h2>Compra de tempo</h2>
+              <p>${minutes.toLocaleString('pt-BR')} minutos</p>
+            </div>
+            <strong>${formatMoney(total)}</strong>
+          </div>
+          <div class="notice">
+            A compra será registrada como pedido pendente.
+          </div>
+          <button id="confirmMinutesOrder" class="btn primary full" type="button" style="margin-top:14px">
+            Confirmar pedido
+          </button>
+        `;
+        $('#confirmMinutesOrder')?.addEventListener('click', createMinutesOrder);
+      }
+    });
+  }
+
+  if ($('refreshStream') && !$('refreshStream').dataset.bound) {
+    $('refreshStream').dataset.bound = '1';
+    $('refreshStream').addEventListener('click', loadStreamStatus);
+  }
+
+  if ($('startStream') && !$('startStream').dataset.bound) {
+    $('startStream').dataset.bound = '1';
+    $('startStream').addEventListener('click', async () => {
+      try {
+        const result = await api('/stream/start', {
+          method: 'POST',
+          body: {}
+        });
+        say(result.message || 'Solicitação enviada.');
+        await loadStreamStatus();
+      } catch (error) {
+        say(error.message || 'Não foi possível iniciar o FiveM.', true);
+      }
+    });
+  }
+
+  if ($('stopStream') && !$('stopStream').dataset.bound) {
+    $('stopStream').dataset.bound = '1';
+    $('stopStream').addEventListener('click', stopFiveM);
+  }
+
+  if ($('minutePriceForm') && !$('minutePriceForm').dataset.bound) {
+    $('minutePriceForm').dataset.bound = '1';
+    $('minutePriceForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      const value = Number($('#minutesRate')?.value || 0);
+      const priceCents = Math.round(value * 100);
+
+      try {
+        await api('/admin/minutes-price', {
+          method: 'POST',
+          body: { priceCents }
+        });
+        minutesRateCents = priceCents;
+        say('Preço por minuto salvo.');
+        await loadAdminData();
+      } catch (error) {
+        say(error.message || 'Não foi possível salvar o preço.', true);
+      }
+    });
+  }
+
+  if ($('timeForm') && !$('timeForm').dataset.bound) {
+    $('timeForm').dataset.bound = '1';
+    $('timeForm').addEventListener('submit', async event => {
+      event.preventDefault();
+
+      const email = $('#playerEmail')?.value.trim().toLowerCase();
+      const minutes = Number($('#addMinutes')?.value || 0);
+      const user = (adminData.users || []).find(
+        item => String(item.email || '').toLowerCase() === email
+      );
+
+      if (!user) {
+        say('Jogador não encontrado.', true);
+        return;
+      }
+
+      try {
+        await api(
+          `/admin/users/${encodeURIComponent(user.id)}/minutes`,
+          {
+            method: 'POST',
+            body: { minutes }
+          }
+        );
+        say('Minutos adicionados.');
+        event.target.reset();
+        await loadAdminData();
+      } catch (error) {
+        say(error.message || 'Não foi possível adicionar minutos.', true);
+      }
+    });
+  }
+
+  document.addEventListener('click', event => {
+    const fivem = event.target.closest('[data-fivem-start]');
+    if (fivem) {
+      event.preventDefault();
+      startFiveM(fivem.dataset.fivemStart);
+      return;
+    }
+
+    const page = event.target.closest('[data-page]');
+    if (page && !page.matches('.nav-item')) {
+      showUserSection(page.dataset.page);
+    }
+  });
+
+  loadStreamStatus();
+}
 
 /* =========================================================
    INICIALIZAÇÃO E NAVEGAÇÃO
@@ -3144,6 +3336,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#adminLoginForm')?.addEventListener('submit', handleAdminLogin);
 
   setupAuthenticationNavigation();
+  setupMainCommerceEvents();
   setupUserNavigation();
   setupAdminNavigation();
   setupSiteEditor();
