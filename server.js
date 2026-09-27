@@ -1,27 +1,111 @@
 'use strict';
 
 const http = require('http');
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
-const PORT = Number(process.env.PORT || 8080);
-const ROOT = __dirname;
-const DB = path.join(ROOT, 'data', 'users.json');
+const PORT = Number(process.env.PORT || 10000);
 
-const ADMIN_USER = String(process.env.ADMIN_USER || '')
-  .trim()
-  .toLowerCase();
-
+const ADMIN_USER = String(process.env.ADMIN_USER || 'admin').trim();
 const ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || '');
+const STREAM_AGENT_KEY = String(process.env.STREAM_AGENT_KEY || '');
+const USER_PASSWORD = String(process.env.USER_PASSWORD || '');
 
-const STREAM_AGENT_KEY = String(
-  process.env.STREAM_AGENT_KEY || ''
-);
+const SESSION_TTL = 1000 * 60 * 60 * 24 * 7;
+const RESET_TTL = 1000 * 60 * 30;
+const DATA_FILE = path.join(__dirname, 'data', 'gamecloud.json');
+
+const defaultSiteConfig = {
+  brandName: 'IMPÉRIO GAMECLOUD',
+  brandSubtitle: 'Seu jogo, em qualquer lugar',
+  authTitle: 'Acesse sua conta',
+  authText: 'Entre para gerenciar seus servidores e seu tempo de jogo.',
+  home: {
+    eyebrow: 'Império GameCloud • FiveM',
+    title: 'Olá, {name}.',
+    text: 'Seu próximo mundo começa aqui. Acompanhe o tempo, gerencie seus servidores e monte sua configuração.',
+    primaryButton: 'Explorar pacotes',
+    secondaryButton: 'Meus servidores',
+    minutesButton: 'Comprar só minutos',
+    heroImage: 'imperio-usuario.png'
+  },
+  authImage: 'imperio-abertura.png',
+  adminImage: 'imperio-admin.png',
+  adminTitle: 'Painel administrativo',
+  adminText: 'Usuários, infraestrutura, catálogo e pedidos em um só lugar.',
+  theme: { gold: '#f2c94c', gold2: '#ffdf73', background: '#090c12' },
+  userNav: { home:'Início', servers:'Meus servidores', buy:'Comprar servidor', cart:'Carrinho', payment:'Pagamento', fivem:'FiveM', orders:'Pedidos', profile:'Perfil', settings:'Configurações', support:'Suporte' }
+};
+
+const defaultPackages = [
+  { id: 'basico', name: 'Básico', priceCents: 1000, ram: 4, vcpu: 2, gpu: 'GPU básica', storage: 50, description: 'Uma base leve para começar no FiveM.' },
+  { id: 'intermediario', name: 'Intermediário', priceCents: 2000, ram: 8, vcpu: 4, gpu: 'GPU melhor', storage: 100, description: 'Mais espaço para seu servidor crescer.' },
+  { id: 'avancado', name: 'Avançado', priceCents: 3000, ram: 16, vcpu: 6, gpu: 'GPU avançada', storage: 200, description: 'Desempenho para comunidades maiores.' },
+  { id: 'premium', name: 'Premium', priceCents: 5000, ram: 32, vcpu: 8, gpu: 'GPU mais potente', storage: 400, description: 'A configuração mais completa do catálogo.' }
+];
+
+function readDatabase() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    return {
+      users: Array.isArray(parsed.users) ? parsed.users : null,
+      servers: Array.isArray(parsed.servers) ? parsed.servers : [],
+      packages: Array.isArray(parsed.packages) && parsed.packages.length ? parsed.packages : defaultPackages,
+      orders: Array.isArray(parsed.orders) ? parsed.orders : [],
+      tickets: Array.isArray(parsed.tickets) ? parsed.tickets : [],
+      minutesRateCents: Number.isSafeInteger(parsed.minutesRateCents) ? parsed.minutesRateCents : 10,
+      siteConfig: parsed.siteConfig && typeof parsed.siteConfig === 'object' ? parsed.siteConfig : defaultSiteConfig
+    };
+  } catch (error) {
+    return { users: null, servers: [], packages: defaultPackages, orders: [], tickets: [], minutesRateCents: 10, siteConfig: defaultSiteConfig };
+  }
+}
+
+const database = readDatabase();
+function saveDatabase() {
+  fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
+  const temporary = DATA_FILE + '.tmp';
+  fs.writeFileSync(temporary, JSON.stringify({
+    users, servers, packages, orders, tickets, minutesRateCents: database.minutesRateCents, siteConfig: database.siteConfig
+  }, null, 2), { mode: 0o600 });
+  fs.renameSync(temporary, DATA_FILE);
+}
+
+function passwordFields(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  return { passwordSalt: salt, passwordHash: crypto.scryptSync(password, salt, 64).toString('hex') };
+}
+
+function passwordMatches(user, password) {
+  if (user.passwordHash && user.passwordSalt) {
+    const candidate = crypto.scryptSync(password, user.passwordSalt, 64);
+    const stored = Buffer.from(user.passwordHash, 'hex');
+    return stored.length === candidate.length && crypto.timingSafeEqual(stored, candidate);
+  }
+  return user.password === password;
+}
 
 const sessions = new Map();
 const resetTokens = new Map();
-const attempts = new Map();
+const agentCommands = [];
+
+const seedPassword = passwordFields(USER_PASSWORD);
+const users = database.users || [
+  {
+    id: 1,
+    name: 'miguell003',
+    username: 'miguell003',
+    email: 'ewerton3220@gmail.com',
+    ...seedPassword,
+    minutes: 366,
+    createdAt: new Date().toISOString()
+  }
+];
+const servers = database.servers;
+const packages = database.packages;
+const orders = database.orders;
+const tickets = database.tickets;
 
 const streaming = {
   enabled: true,
@@ -32,85 +116,28 @@ const streaming = {
   message: 'Aguardando o PC de streaming.'
 };
 
-function ensureDatabase() {
-  const dir = path.dirname(DB);
-
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-
-  if (!fs.existsSync(DB)) {
-    fs.writeFileSync(DB, '[]', 'utf8');
-  }
-}
-
-ensureDatabase();
-
-function loadUsers() {
-  try {
-    const data = fs.readFileSync(DB, 'utf8');
-    const users = JSON.parse(data);
-
-    return Array.isArray(users) ? users : [];
-  } catch (error) {
-    console.error('Erro ao carregar usuários:', error);
-    return [];
-  }
-}
-
-let users = loadUsers();
-
-function saveUsers() {
-  const dir = path.dirname(DB);
-
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-
-  const temporary = `${DB}.tmp`;
-
-  fs.writeFileSync(
-    temporary,
-    JSON.stringify(users, null, 2),
-    'utf8'
-  );
-
-  fs.renameSync(temporary, DB);
-}
-
-function json(res, status, data) {
-  const body = JSON.stringify(data);
-
-  res.writeHead(status, {
+function json(res, statusCode, data) {
+  res.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
-    'Content-Length': Buffer.byteLength(body),
+    'Cache-Control': 'no-cache',
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Stream-Agent-Key',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff'
+    'Access-Control-Allow-Headers':
+      'Content-Type, Authorization, X-Stream-Agent-Key',
+    'Access-Control-Allow-Methods':
+      'GET, POST, OPTIONS'
   });
 
-  res.end(body);
+  res.end(JSON.stringify(data));
 }
 
-function text(res, status, body) {
-  res.writeHead(status, {
+function text(res, statusCode, message) {
+  res.writeHead(statusCode, {
     'Content-Type': 'text/plain; charset=utf-8',
-    'Content-Length': Buffer.byteLength(body),
-    'Access-Control-Allow-Origin': '*',
-    'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff'
+    'Cache-Control': 'no-cache',
+    'Access-Control-Allow-Origin': '*'
   });
 
-  res.end(body);
-}
-
-function notFound(res) {
-  json(res, 404, {
-    ok: false,
-    error: 'Rota não encontrada.'
-  });
+  res.end(message);
 }
 
 function unauthorized(res) {
@@ -120,22 +147,40 @@ function unauthorized(res) {
   });
 }
 
-function forbidden(res) {
-  json(res, 403, {
+function badRequest(res, message) {
+  json(res, 400, {
     ok: false,
-    error: 'Acesso negado.'
+    error: message || 'Requisição inválida.'
   });
+}
+
+function notFound(res) {
+  json(res, 404, {
+    ok: false,
+    error: 'Rota não encontrada.'
+  });
+}
+
+function serverError(res, message) {
+  json(res, 500, {
+    ok: false,
+    error: message || 'Erro interno do servidor.'
+  });
+}
+
+function createToken() {
+  return crypto.randomBytes(32).toString('hex');
 }
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
 
-    req.on('data', chunk => {
+    req.on('data', (chunk) => {
       body += chunk;
 
-      if (body.length > 1024 * 1024) {
-        reject(new Error('Payload muito grande.'));
+      if (body.length > 4 * 1024 * 1024) {
+        reject(new Error('Corpo da requisição muito grande.'));
         req.destroy();
       }
     });
@@ -148,7 +193,7 @@ function readBody(req) {
 
       try {
         resolve(JSON.parse(body));
-      } catch {
+      } catch (error) {
         reject(new Error('JSON inválido.'));
       }
     });
@@ -157,116 +202,121 @@ function readBody(req) {
   });
 }
 
-function randomToken(bytes = 32) {
-  return crypto.randomBytes(bytes).toString('hex');
-}
+function getCookies(req) {
+  const header = req.headers.cookie || '';
+  const cookies = {};
 
-function passwordDigest(password, salt) {
-  return crypto
-    .scryptSync(String(password), salt, 64)
-    .toString('hex');
-}
+  header.split(';').forEach((part) => {
+    const index = part.indexOf('=');
 
-function hashPassword(password) {
-  const salt = crypto.randomBytes(16).toString('hex');
-
-  return {
-    salt,
-    hash: passwordDigest(password, salt)
-  };
-}
-
-function verifyPassword(password, user) {
-  if (!user || !user.salt || !user.hash) {
-    return false;
-  }
-
-  try {
-    const expected = Buffer.from(user.hash, 'hex');
-    const actual = Buffer.from(
-      passwordDigest(password, user.salt),
-      'hex'
-    );
-
-    if (expected.length !== actual.length) {
-      return false;
+    if (index === -1) {
+      return;
     }
 
-    return crypto.timingSafeEqual(expected, actual);
-  } catch {
-    return false;
-  }
-}
+    const key = part.slice(0, index).trim();
+    const value = part.slice(index + 1).trim();
 
-function safeEqual(a, b) {
-  const first = Buffer.from(String(a || ''));
-  const second = Buffer.from(String(b || ''));
-
-  if (first.length !== second.length) {
-    return false;
-  }
-
-  if (first.length === 0) {
-    return true;
-  }
-
-  return crypto.timingSafeEqual(first, second);
-}
-
-function createSession(type, email) {
-  const token = randomToken(32);
-
-  sessions.set(token, {
-    type,
-    email,
-    createdAt: Date.now()
+    try {
+      cookies[key] = decodeURIComponent(value);
+    } catch {
+      cookies[key] = value;
+    }
   });
 
-  return token;
+  return cookies;
+}
+
+function getBearerToken(req) {
+  const authorization = req.headers.authorization || '';
+
+  if (!authorization.startsWith('Bearer ')) {
+    return '';
+  }
+
+  return authorization.slice(7).trim();
 }
 
 function getSession(req) {
-  const authorization = String(
-    req.headers.authorization || ''
-  );
+  const cookies = getCookies(req);
 
-  if (!authorization.startsWith('Bearer ')) {
-    return null;
-  }
+  const cookieToken = cookies.session || '';
+  const bearerToken = getBearerToken(req);
 
-  const token = authorization.slice(7).trim();
+  const token = bearerToken || cookieToken;
 
   if (!token) {
     return null;
   }
 
-  return sessions.get(token) || null;
+  const session = sessions.get(token);
+
+  if (!session) {
+    return null;
+  }
+
+  if (Date.now() > session.expiresAt) {
+    sessions.delete(token);
+    return null;
+  }
+
+  return session;
 }
 
-function requireSession(req, res) {
+function getCurrentUser(req) {
   const session = getSession(req);
 
+  if (!session || session.role !== 'player') {
+    return null;
+  }
+
+  return (
+    users.find((user) => user.id === session.userId) ||
+    null
+  );
+}
+
+function getAdminSession(req) {
+  const cookies = getCookies(req);
+  const cookieToken = cookies.admin_session || '';
+  const bearerToken = getBearerToken(req);
+
+  const token = bearerToken || cookieToken;
+
+  if (!token) {
+    return null;
+  }
+
+  const session = sessions.get(`admin:${token}`);
+
   if (!session) {
-    unauthorized(res);
+    return null;
+  }
+
+  if (Date.now() > session.expiresAt) {
+    sessions.delete(`admin:${token}`);
     return null;
   }
 
   return session;
 }
 
-function requireAdmin(req, res) {
-  const session = requireSession(req, res);
+function setSessionCookie(res, token) {
+  res.setHeader(
+    'Set-Cookie',
+    `session=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${Math.floor(
+      SESSION_TTL / 1000
+    )}`
+  );
+}
 
-  if (!session) {
-    return null;
-  }
-
-  if (session.type !== 'admin') {
-    forbidden(res);
-    return null;
-  }
-
-  return session;
+function clearSessionCookie(res) {
+  res.setHeader(
+    'Set-Cookie',
+    [
+      'session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0',
+      'admin_session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0'
+    ]
+  );
 }
 
 function agentAuthorized(req) {
@@ -274,374 +324,333 @@ function agentAuthorized(req) {
     return false;
   }
 
-  return safeEqual(
-    req.headers['x-stream-agent-key'],
-    STREAM_AGENT_KEY
-  );
-}
+  const key = req.headers['x-stream-agent-key'];
 
-function validEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
-function normalizeEmail(email) {
-  return String(email || '')
-    .trim()
-    .toLowerCase();
-}
-
-function rateLimit(key, max = 10, windowMs = 60000) {
-  const now = Date.now();
-  const current = attempts.get(key);
-
-  if (!current || now - current.startedAt > windowMs) {
-    attempts.set(key, {
-      startedAt: now,
-      count: 1
-    });
-
-    return true;
-  }
-
-  current.count += 1;
-
-  return current.count <= max;
+  return Boolean(key && key === STREAM_AGENT_KEY);
 }
 
 function publicUser(user) {
   return {
-    email: user.email,
+    id: user.id,
     name: user.name,
-    minutes: Number(user.minutes || 0)
+    username: user.username,
+    email: user.email,
+    minutes: user.minutes,
+    role: 'player'
   };
 }
 
-function findUser(email) {
-  const normalized = normalizeEmail(email);
+function findUserByEmail(email) {
+  return users.find(
+    (user) =>
+      user.email.toLowerCase() ===
+      String(email).trim().toLowerCase()
+  );
+}
+
+function findUserByLogin(value) {
+  const login = String(value || '').trim().toLowerCase();
 
   return users.find(
-    user => normalizeEmail(user.email) === normalized
+    (user) =>
+      user.email.toLowerCase() === login ||
+      user.username.toLowerCase() === login
   );
 }
 
-function findUserIndex(email) {
-  const normalized = normalizeEmail(email);
-
-  return users.findIndex(
-    user => normalizeEmail(user.email) === normalized
+const server = http.createServer(async (req, res) => {
+  const parsedUrl = new URL(
+    req.url,
+    `http://${req.headers.host || 'localhost'}`
   );
-}
 
-function removeExpiredSessions() {
-  const maxAge = 7 * 24 * 60 * 60 * 1000;
-  const now = Date.now();
+  const pathname = parsedUrl.pathname;
+  const method = req.method;
 
-  for (const [token, session] of sessions.entries()) {
-    if (now - session.createdAt > maxAge) {
-      sessions.delete(token);
-    }
-  }
-}
-
-setInterval(removeExpiredSessions, 60 * 60 * 1000).unref();
-
-async function handle(req, res) {
-  if (req.method === 'OPTIONS') {
+  if (method === 'OPTIONS') {
     res.writeHead(204, {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Headers':
         'Content-Type, Authorization, X-Stream-Agent-Key',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
+      'Access-Control-Allow-Methods':
+        'GET, POST, OPTIONS'
     });
 
     res.end();
     return;
   }
 
-  const url = new URL(
-    req.url,
-    `http://${req.headers.host || 'localhost'}`
-  );
-
-  const pathname = url.pathname;
-
-  /*
-   * HEALTH
-   */
-
-  if (req.method === 'GET' && pathname === '/api/health') {
+  if (method === 'GET' && pathname === '/api/health') {
     json(res, 200, {
       ok: true,
-      version: '4.1.0',
-      streaming: {
-        enabled: streaming.enabled,
-        status: streaming.status
-      }
+      service: 'Império GameCloud',
+      version: '4.2.0'
     });
-
     return;
   }
 
   /*
-   * STREAM STATUS
+   * LOGIN DO JOGADOR
    */
-
-  if (
-    req.method === 'GET' &&
-    pathname === '/api/stream/status'
-  ) {
-    json(res, 200, {
-      ok: true,
-      streaming: {
-        enabled: streaming.enabled,
-        status: streaming.status,
-        game: streaming.game,
-        host: streaming.host,
-        lastHeartbeat: streaming.lastHeartbeat,
-        message: streaming.message
-      }
-    });
-
-    return;
-  }
-
-  /*
-   * REGISTER
-   */
-
-  if (
-    req.method === 'POST' &&
-    pathname === '/api/users/register'
-  ) {
-    const ip = req.socket.remoteAddress || 'unknown';
-
-    if (!rateLimit(`register:${ip}`, 10, 60000)) {
-      json(res, 429, {
-        ok: false,
-        error: 'Muitas tentativas. Aguarde um pouco.'
-      });
-
-      return;
-    }
-
+  if (method === 'POST' && pathname === '/api/login') {
     try {
       const body = await readBody(req);
 
-      const email = normalizeEmail(body.email);
-      const name = String(body.name || '').trim();
-      const password = String(body.password || '');
+      const loginValue = String(
+        body.email ||
+        body.username ||
+        ''
+      ).trim();
 
-      if (!validEmail(email)) {
-        json(res, 400, {
+      const password = String(
+        body.password || ''
+      );
+
+      const user = findUserByLogin(loginValue);
+
+      if (!user || !passwordMatches(user, password)) {
+        json(res, 401, {
           ok: false,
-          error: 'E-mail inválido.'
+          error: 'Usuário, e-mail ou senha incorretos.'
         });
-
         return;
       }
 
-      if (name.length < 2) {
-        json(res, 400, {
-          ok: false,
-          error: 'Informe seu nome.'
-        });
+      const token = createToken();
 
-        return;
-      }
+      sessions.set(token, {
+        role: 'player',
+        userId: user.id,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + SESSION_TTL
+      });
 
-      if (password.length < 8) {
-        json(res, 400, {
-          ok: false,
-          error: 'A senha deve ter pelo menos 8 caracteres.'
-        });
+      setSessionCookie(res, token);
 
-        return;
-      }
-
-      if (
-        ADMIN_USER &&
-        email === ADMIN_USER
-      ) {
-        json(res, 409, {
-          ok: false,
-          error: 'Este e-mail é reservado para o administrador.'
-        });
-
-        return;
-      }
-
-      if (findUser(email)) {
-        json(res, 409, {
-          ok: false,
-          error: 'Este e-mail já está cadastrado.'
-        });
-
-        return;
-      }
-
-      const credentials = hashPassword(password);
-
-      const user = {
-        email,
-        name,
-        salt: credentials.salt,
-        hash: credentials.hash,
-        minutes: 0,
-        createdAt: new Date().toISOString()
-      };
-
-      users.push(user);
-      saveUsers();
-
-      console.log(`Novo jogador cadastrado: ${email}`);
-
-      json(res, 201, {
+      json(res, 200, {
         ok: true,
-        message: 'Cadastro realizado com sucesso.',
+        token: token,
+        role: 'player',
         user: publicUser(user)
       });
 
       return;
     } catch (error) {
-      console.error('Erro no cadastro:', error);
-
-      json(res, 400, {
-        ok: false,
-        error: 'Dados inválidos.'
-      });
-
+      console.error('Erro no login:', error);
+      serverError(res, 'Erro ao realizar login.');
       return;
     }
   }
 
   /*
-   * LOGIN
+   * LOGIN DO ADMINISTRADOR
    */
-
   if (
-    req.method === 'POST' &&
-    pathname === '/api/login'
+    method === 'POST' &&
+    pathname === '/api/admin/login'
   ) {
-    const ip = req.socket.remoteAddress || 'unknown';
-
-    if (!rateLimit(`login:${ip}`, 20, 60000)) {
-      json(res, 429, {
-        ok: false,
-        error: 'Muitas tentativas. Aguarde um pouco.'
-      });
-
-      return;
-    }
-
     try {
       const body = await readBody(req);
 
-      const email = normalizeEmail(body.email);
-      const password = String(body.password || '');
+      const username = String(
+        body.username || ''
+      ).trim();
 
-      /*
-       * ADMIN
-       */
-
-      if (
-        ADMIN_USER &&
-        email === ADMIN_USER &&
-        ADMIN_PASSWORD &&
-        safeEqual(password, ADMIN_PASSWORD)
-      ) {
-        const token = createSession(
-          'admin',
-          ADMIN_USER
-        );
-
-        json(res, 200, {
-          ok: true,
-          token,
-          user: {
-            email: ADMIN_USER,
-            name: 'Administrador',
-            role: 'admin'
-          }
-        });
-
-        return;
-      }
-
-      /*
-       * PLAYER
-       */
-
-      const user = findUser(email);
+      const password = String(
+        body.password || ''
+      );
 
       if (
-        !user ||
-        !verifyPassword(password, user)
+        username !== ADMIN_USER ||
+        password !== ADMIN_PASSWORD
       ) {
-        console.log(`Falha de login: ${email}`);
-
         json(res, 401, {
           ok: false,
-          error: 'E-mail ou senha incorretos.'
+          error: 'Login de administrador inválido.'
         });
-
         return;
       }
 
-      const token = createSession(
-        'player',
-        user.email
+      const token = createToken();
+
+      sessions.set(`admin:${token}`, {
+        role: 'admin',
+        admin: true,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + SESSION_TTL
+      });
+
+      res.setHeader(
+        'Set-Cookie',
+        `admin_session=${encodeURIComponent(
+          token
+        )}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${Math.floor(
+          SESSION_TTL / 1000
+        )}`
       );
 
       json(res, 200, {
         ok: true,
-        token,
+        token: token,
+        role: 'admin',
         user: {
-          ...publicUser(user),
-          role: 'player'
+          role: 'admin',
+          name: 'Administrador',
+          username: ADMIN_USER
         }
       });
 
       return;
     } catch (error) {
-      console.error('Erro no login:', error);
+      console.error('Erro no login admin:', error);
+      serverError(
+        res,
+        'Erro no login administrativo.'
+      );
+      return;
+    }
+  }
 
-      json(res, 400, {
-        ok: false,
-        error: 'Dados inválidos.'
+  /*
+   * CADASTRO DE JOGADOR
+   */
+  if (
+    method === 'POST' &&
+    pathname === '/api/users/register'
+  ) {
+    try {
+      const body = await readBody(req);
+
+      const name = String(
+        body.name || ''
+      ).trim();
+
+      const email = String(
+        body.email || ''
+      ).trim().toLowerCase();
+
+      const password = String(
+        body.password || ''
+      );
+
+      if (!name || !email || !password) {
+        badRequest(
+          res,
+          'Preencha todos os campos.'
+        );
+        return;
+      }
+
+      if (password.length < 8) {
+        badRequest(
+          res,
+          'A senha precisa ter pelo menos 8 caracteres.'
+        );
+        return;
+      }
+
+      const emailRegex =
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+      if (!emailRegex.test(email)) {
+        badRequest(
+          res,
+          'Informe um e-mail válido.'
+        );
+        return;
+      }
+
+      if (email === ADMIN_USER.toLowerCase()) {
+        badRequest(
+          res,
+          'Esse e-mail é reservado para o administrador.'
+        );
+        return;
+      }
+
+      if (findUserByEmail(email)) {
+        json(res, 409, {
+          ok: false,
+          error: 'Este e-mail já está cadastrado.'
+        });
+        return;
+      }
+
+      const usernameBase =
+        name
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, '')
+          .slice(0, 20) ||
+        'jogador';
+
+      let username = usernameBase;
+      let number = 1;
+
+      while (
+        users.some(
+          (user) =>
+            user.username.toLowerCase() ===
+            username.toLowerCase()
+        )
+      ) {
+        username =
+          usernameBase + number;
+        number++;
+      }
+
+      const user = {
+        id:
+          users.length > 0
+            ? Math.max(
+                ...users.map((item) => item.id)
+              ) + 1
+            : 1,
+        name: name,
+        username: username,
+        email: email,
+        ...passwordFields(password),
+        minutes: 0,
+        createdAt: new Date().toISOString()
+      };
+
+      users.push(user);
+      saveDatabase();
+
+      console.log(
+        `Novo jogador cadastrado: ${email}`
+      );
+
+      json(res, 201, {
+        ok: true,
+        message:
+          'Conta criada com sucesso. Agora faça login.',
+        user: publicUser(user)
       });
+
+      return;
+    } catch (error) {
+      console.error(
+        'Erro no cadastro:',
+        error
+      );
+
+      serverError(
+        res,
+        'Erro ao criar a conta.'
+      );
 
       return;
     }
   }
 
   /*
-   * ME
+   * DADOS DO USUÁRIO LOGADO
    */
-
   if (
-    req.method === 'GET' &&
+    method === 'GET' &&
     pathname === '/api/me'
   ) {
-    const session = requireSession(req, res);
-
-    if (!session) {
-      return;
-    }
-
-    if (session.type === 'admin') {
-      json(res, 200, {
-        ok: true,
-        user: {
-          email: ADMIN_USER,
-          name: 'Administrador',
-          role: 'admin'
-        }
-      });
-
-      return;
-    }
-
-    const user = findUser(session.email);
+    const user = getCurrentUser(req);
 
     if (!user) {
       unauthorized(res);
@@ -650,10 +659,8 @@ async function handle(req, res) {
 
     json(res, 200, {
       ok: true,
-      user: {
-        ...publicUser(user),
-        role: 'player'
-      }
+      user: publicUser(user),
+      role: 'player'
     });
 
     return;
@@ -662,127 +669,80 @@ async function handle(req, res) {
   /*
    * LOGOUT
    */
-
   if (
-    req.method === 'POST' &&
+    method === 'POST' &&
     pathname === '/api/logout'
   ) {
-    const authorization = String(
-      req.headers.authorization || ''
-    );
+    const bearerToken =
+      getBearerToken(req);
 
-    if (authorization.startsWith('Bearer ')) {
-      const token = authorization.slice(7).trim();
+    const cookies = getCookies(req);
 
-      if (token) {
-        sessions.delete(token);
-      }
+    if (bearerToken) {
+      sessions.delete(bearerToken);
     }
 
+    if (cookies.session) {
+      sessions.delete(cookies.session);
+    }
+
+    if (cookies.admin_session) {
+      sessions.delete(
+        `admin:${cookies.admin_session}`
+      );
+    }
+
+    clearSessionCookie(res);
+
     json(res, 200, {
-      ok: true,
-      message: 'Sessão encerrada.'
+      ok: true
     });
 
     return;
   }
 
   /*
-   * PLAYER STREAM START
+   * ESQUECI A SENHA
    */
-
   if (
-    req.method === 'POST' &&
-    pathname === '/api/stream/start'
-  ) {
-    const session = requireSession(req, res);
-
-    if (!session) {
-      return;
-    }
-
-    if (session.type !== 'player') {
-      forbidden(res);
-      return;
-    }
-
-    if (!streaming.enabled) {
-      json(res, 503, {
-        ok: false,
-        error: 'O streaming está desativado.'
-      });
-
-      return;
-    }
-
-    if (streaming.status !== 'online') {
-      json(res, 503, {
-        ok: false,
-        error: 'O PC de streaming está offline.',
-        streaming: {
-          status: streaming.status,
-          game: streaming.game,
-          host: streaming.host
-        }
-      });
-
-      return;
-    }
-
-    const user = findUser(session.email);
-
-    if (!user) {
-      unauthorized(res);
-      return;
-    }
-
-    if (Number(user.minutes || 0) <= 0) {
-      json(res, 403, {
-        ok: false,
-        error: 'Você não possui minutos disponíveis.'
-      });
-
-      return;
-    }
-
-    json(res, 200, {
-      ok: true,
-      message: 'Solicitação de início enviada.',
-      game: streaming.game,
-      host: streaming.host
-    });
-
-    return;
-  }
-
-  /*
-   * FORGOT PASSWORD
-   */
-
-  if (
-    req.method === 'POST' &&
+    method === 'POST' &&
     pathname === '/api/forgot-password'
   ) {
     try {
       const body = await readBody(req);
-      const email = normalizeEmail(body.email);
 
-      const user = findUser(email);
+      const email = String(
+        body.email || ''
+      ).trim().toLowerCase();
 
-      /*
-       * Não revelamos se o e-mail existe.
-       */
+      const user = findUserByEmail(email);
 
       if (user) {
-        const token = randomToken(24);
+        const token = createToken();
 
         resetTokens.set(token, {
-          email: user.email,
-          expiresAt: Date.now() + 15 * 60 * 1000
+          userId: user.id,
+          expiresAt:
+            Date.now() + RESET_TTL
         });
 
         console.log(
-          `Token de recuperação para ${user.email}: ${token}`
+          '================================'
+        );
+        console.log(
+          'TOKEN DE RECUPERAÇÃO DE SENHA'
+        );
+        console.log(
+          `E-mail: ${user.email}`
+        );
+        console.log(
+          `Token: ${token}`
+        );
+        console.log(
+          `Link: ?reset=${token}`
+        );
+        console.log(
+          '================================'
         );
       }
 
@@ -793,58 +753,81 @@ async function handle(req, res) {
       });
 
       return;
-    } catch {
-      json(res, 400, {
-        ok: false,
-        error: 'Dados inválidos.'
-      });
-
+    } catch (error) {
+      serverError(
+        res,
+        'Erro ao processar recuperação de senha.'
+      );
       return;
     }
   }
 
   /*
-   * RESET PASSWORD
+   * REDEFINIR SENHA
    */
-
   if (
-    req.method === 'POST' &&
+    method === 'POST' &&
     pathname === '/api/reset-password'
   ) {
     try {
       const body = await readBody(req);
 
-      const token = String(body.token || '');
-      const password = String(body.password || '');
+      const token = String(
+        body.token || ''
+      ).trim();
 
-      if (password.length < 8) {
-        json(res, 400, {
-          ok: false,
-          error: 'A senha deve ter pelo menos 8 caracteres.'
-        });
+      const password = String(
+        body.password || ''
+      );
 
+      if (!token || !password) {
+        badRequest(
+          res,
+          'Token e nova senha são obrigatórios.'
+        );
         return;
       }
 
-      const reset = resetTokens.get(token);
+      if (password.length < 8) {
+        badRequest(
+          res,
+          'A nova senha precisa ter pelo menos 8 caracteres.'
+        );
+        return;
+      }
+
+      const reset =
+        resetTokens.get(token);
+
+      if (!reset) {
+        json(res, 400, {
+          ok: false,
+          error:
+            'Token inválido ou expirado.'
+        });
+        return;
+      }
 
       if (
-        !reset ||
-        Date.now() > reset.expiresAt
+        Date.now() >
+        reset.expiresAt
       ) {
         resetTokens.delete(token);
 
         json(res, 400, {
           ok: false,
-          error: 'Token inválido ou expirado.'
+          error: 'Token expirado.'
         });
 
         return;
       }
 
-      const index = findUserIndex(reset.email);
+      const user = users.find(
+        (item) =>
+          item.id === reset.userId
+      );
 
-      if (index < 0) {
+      if (!user) {
         resetTokens.delete(token);
 
         json(res, 400, {
@@ -855,232 +838,606 @@ async function handle(req, res) {
         return;
       }
 
-      const credentials = hashPassword(password);
-
-      users[index].salt = credentials.salt;
-      users[index].hash = credentials.hash;
-
-      saveUsers();
+      Object.assign(user, passwordFields(password));
+      delete user.password;
+      saveDatabase();
 
       resetTokens.delete(token);
 
       json(res, 200, {
         ok: true,
-        message: 'Senha alterada com sucesso.'
+        message:
+          'Senha alterada com sucesso.'
       });
 
       return;
-    } catch {
-      json(res, 400, {
-        ok: false,
-        error: 'Dados inválidos.'
-      });
-
+    } catch (error) {
+      serverError(
+        res,
+        'Erro ao redefinir senha.'
+      );
       return;
     }
   }
 
-  /*
-   * ADMIN OVERVIEW
-   */
+  if (method === 'GET' && pathname === '/api/site-config') {
+    json(res, 200, { ok: true, siteConfig: database.siteConfig });
+    return;
+  }
 
-  if (
-    req.method === 'GET' &&
-    pathname === '/api/admin/overview'
-  ) {
-    const session = requireAdmin(req, res);
+  // Catálogo público, com valores definidos no servidor.
+  if (method === 'GET' && pathname === '/api/packages') {
+    json(res, 200, { ok: true, packages: packages.map((item) => ({ ...item })), minutesRateCents: database.minutesRateCents });
+    return;
+  }
 
-    if (!session) {
+  if (method === 'GET' && pathname === '/api/servers') {
+    const user = getCurrentUser(req);
+    if (!user) { unauthorized(res); return; }
+    json(res, 200, { ok: true, servers: servers.filter((item) => item.userId === user.id) });
+    return;
+  }
+
+  if (method === 'GET' && pathname === '/api/orders') {
+    const user = getCurrentUser(req);
+    if (!user) { unauthorized(res); return; }
+    json(res, 200, { ok: true, orders: orders.filter((item) => item.userId === user.id) });
+    return;
+  }
+
+  if (pathname === '/api/support' && (method === 'GET' || method === 'POST')) {
+    const user = getCurrentUser(req);
+    if (!user) { unauthorized(res); return; }
+    if (method === 'GET') { json(res, 200, { ok: true, tickets: tickets.filter((item) => item.userId === user.id) }); return; }
+    try {
+      const body = await readBody(req);
+      const subject = String(body.subject || '').trim();
+      const content = String(body.message || '').trim();
+      if (subject.length < 3 || subject.length > 100 || content.length < 10 || content.length > 2000) { badRequest(res, 'Informe um assunto de 3 a 100 caracteres e uma mensagem de 10 a 2000 caracteres.'); return; }
+      const ticket = { id: crypto.randomUUID(), userId: user.id, userName: user.name, email: user.email, subject, message: content, status: 'ABERTO', createdAt: new Date().toISOString() };
+      tickets.unshift(ticket); saveDatabase(); json(res, 201, { ok: true, ticket }); return;
+    } catch (error) { serverError(res, 'Não foi possível registrar o chamado.'); return; }
+  }
+
+  if (method === 'POST' && pathname === '/api/orders') {
+    const user = getCurrentUser(req);
+    if (!user) { unauthorized(res); return; }
+    try {
+      const body = await readBody(req);
+      const packageId = body.packageId ? String(body.packageId) : '';
+      const minutes = Number(body.minutes || 0);
+      if (!Number.isSafeInteger(minutes) || minutes < 0 || minutes > 50000 || (!packageId && minutes === 0)) {
+        badRequest(res, 'Escolha um pacote e/ou uma quantidade válida de minutos.'); return;
+      }
+      const selectedPackage = packageId ? packages.find((item) => item.id === packageId) : null;
+      if (packageId && !selectedPackage) { badRequest(res, 'Pacote indisponível. Atualize o catálogo e tente novamente.'); return; }
+      const totalCents = (selectedPackage ? selectedPackage.priceCents : 0) + minutes * database.minutesRateCents;
+      const order = {
+        id: crypto.randomUUID(), userId: user.id, packageId: selectedPackage ? selectedPackage.id : null,
+        packageName: selectedPackage ? selectedPackage.name : null,
+        minutes, packagePriceCents: selectedPackage ? selectedPackage.priceCents : 0,
+        minutesPriceCents: minutes * database.minutesRateCents, totalCents,
+        status: 'PENDENTE', createdAt: new Date().toISOString(),
+        paymentMessage: 'Pagamento pendente: não há gateway de pagamento configurado. Aguarde a aprovação manual do administrador.'
+      };
+      orders.unshift(order);
+      saveDatabase();
+      json(res, 201, { ok: true, order });
       return;
+    } catch (error) { serverError(res, 'Não foi possível registrar o pedido.'); return; }
+  }
+
+  if (method === 'POST' && pathname === '/api/me/profile') {
+    const user = getCurrentUser(req);
+    if (!user) { unauthorized(res); return; }
+    try {
+      const body = await readBody(req);
+      const name = String(body.name || '').trim();
+      if (name.length < 2 || name.length > 60) { badRequest(res, 'O nome deve ter entre 2 e 60 caracteres.'); return; }
+      user.name = name;
+      saveDatabase();
+      json(res, 200, { ok: true, user: publicUser(user) });
+      return;
+    } catch (error) { serverError(res, 'Não foi possível salvar o perfil.'); return; }
+  }
+
+  // Endpoints administrativos: todas as operações exigem sessão admin.
+  if (pathname.startsWith('/api/admin/servers') || pathname.startsWith('/api/admin/orders') || pathname.startsWith('/api/admin/packages') || pathname === '/api/admin/minutes-price' || pathname === '/api/admin/support' || pathname === '/api/admin/site-config') {
+    const admin = getAdminSession(req);
+    if (!admin) { unauthorized(res); return; }
+
+    if (method === 'POST' && pathname === '/api/admin/site-config') {
+      try {
+        const body = await readBody(req);
+        const cfg = body.siteConfig && typeof body.siteConfig === 'object' ? body.siteConfig : body;
+        const clean = JSON.parse(JSON.stringify(cfg));
+        const raw = JSON.stringify(clean);
+        if (raw.length > 3500000) { badRequest(res, 'A configuração ficou grande demais. Use imagens menores.'); return; }
+        if (clean.home && clean.home.heroImage && String(clean.home.heroImage).startsWith('data:') && String(clean.home.heroImage).length > 2600000) { badRequest(res, 'A imagem principal é grande demais.'); return; }
+        database.siteConfig = {
+          ...defaultSiteConfig,
+          ...clean,
+          home: { ...defaultSiteConfig.home, ...(clean.home || {}) },
+          theme: { ...defaultSiteConfig.theme, ...(clean.theme || {}) },
+          userNav: { ...defaultSiteConfig.userNav, ...(clean.userNav || {}) }
+        };
+        saveDatabase();
+        json(res, 200, { ok: true, siteConfig: database.siteConfig, message: 'Editor publicado com sucesso.' });
+        return;
+      } catch (error) { serverError(res, 'Não foi possível salvar o editor.'); return; }
     }
 
+    if (method === 'GET' && pathname === '/api/admin/servers') {
+      json(res, 200, { ok: true, servers: servers.map((item) => ({ ...item, userName: (users.find((user) => user.id === item.userId) || {}).name || 'Sem vínculo' })) }); return;
+    }
+    if (method === 'GET' && pathname === '/api/admin/orders') {
+      json(res, 200, { ok: true, orders: orders.map((item) => ({ ...item, userName: (users.find((user) => user.id === item.userId) || {}).name || 'Usuário removido' })) }); return;
+    }
+    if (method === 'GET' && pathname === '/api/admin/packages') {
+      json(res, 200, { ok: true, packages: packages.map((item) => ({ ...item })), minutesRateCents: database.minutesRateCents }); return;
+    }
+
+    if (method === 'POST' && pathname === '/api/admin/servers') {
+      try {
+        const body = await readBody(req);
+        const name = String(body.name || '').trim();
+        const type = String(body.type || '').trim();
+        const userId = body.userId === '' || body.userId === null ? null : Number(body.userId);
+        const ram = Number(body.ram), vcpu = Number(body.vcpu), storage = Number(body.storage);
+        const gpu = String(body.gpu || '').trim();
+        const status = String(body.status || 'offline');
+        if (!name || name.length > 80 || !type || type.length > 40 || !Number.isSafeInteger(ram) || ram < 1 || ram > 512 || !Number.isSafeInteger(vcpu) || vcpu < 1 || vcpu > 128 || !Number.isSafeInteger(storage) || storage < 1 || storage > 10000 || !gpu || gpu.length > 100 || !['offline', 'online', 'provisioning', 'error'].includes(status)) {
+          badRequest(res, 'Revise nome, tipo e especificações do servidor.'); return;
+        }
+        if (userId !== null && !users.some((item) => item.id === userId)) { badRequest(res, 'Usuário vinculado não encontrado.'); return; }
+        const serverId = body.id ? String(body.id) : crypto.randomUUID();
+        const existing = servers.findIndex((item) => item.id === serverId);
+        const entry = { id: serverId, name, type, userId, ram, vcpu, gpu, storage, status, updatedAt: new Date().toISOString() };
+        if (existing >= 0) servers[existing] = { ...servers[existing], ...entry };
+        else { entry.createdAt = entry.updatedAt; servers.push(entry); }
+        saveDatabase();
+        json(res, existing >= 0 ? 200 : 201, { ok: true, server: entry });
+        return;      } catch (error) { serverError(res, 'Não foi possível salvar o servidor.'); return; }
+    }
+
+    if (method === 'GET' && pathname === '/api/admin/support') {
+      json(res, 200, { ok: true, tickets: tickets.map((item) => ({ ...item })) }); return;
+    }
+
+    const deleteServer = pathname.match(/^\/api\/admin\/servers\/([^/]+)\/delete$/);
+    if (method === 'POST' && deleteServer) {
+      const index = servers.findIndex((item) => item.id === decodeURIComponent(deleteServer[1]));
+      if (index < 0) { notFound(res); return; }
+      servers.splice(index, 1); saveDatabase(); json(res, 200, { ok: true }); return;
+    }
+
+    const lifecycle = pathname.match(/^\/api\/admin\/servers\/([^/]+)\/(start|stop)$/);
+    if (method === 'POST' && lifecycle) {
+      const item = servers.find((serverItem) => serverItem.id === decodeURIComponent(lifecycle[1]));
+      if (!item) { notFound(res); return; }
+      json(res, 409, { ok: false, error: 'Controle de energia indisponível: não há agente de infraestrutura de servidores conectado. O status real não foi alterado.' }); return;
+    }
+
+    if (method === 'POST' && pathname === '/api/admin/packages') {
+      try {
+        const body = await readBody(req);
+        const packageId = String(body.id || '');
+        const priceCents = Number(body.priceCents);
+        const item = packages.find((catalogItem) => catalogItem.id === packageId);
+        if (!item || !Number.isSafeInteger(priceCents) || priceCents < 0 || priceCents > 100000000) { badRequest(res, 'Pacote ou preço inválido.'); return; }
+        item.priceCents = priceCents; saveDatabase(); json(res, 200, { ok: true, packages }); return;
+      } catch (error) { serverError(res, 'Não foi possível salvar o catálogo.'); return; }
+    }
+
+    if (method === 'POST' && pathname === '/api/admin/minutes-price') {
+      try {
+        const body = await readBody(req);
+        const cents = Number(body.priceCents);
+        if (!Number.isSafeInteger(cents) || cents < 0 || cents > 100000) { badRequest(res, 'Informe um valor por minuto válido.'); return; }
+        database.minutesRateCents = cents; saveDatabase(); json(res, 200, { ok: true, minutesRateCents: cents }); return;
+      } catch (error) { serverError(res, 'Não foi possível salvar o preço dos minutos.'); return; }
+    }
+
+    const approve = pathname.match(/^\/api\/admin\/orders\/([^/]+)\/approve$/);
+    if (method === 'POST' && approve) {
+      const order = orders.find((item) => item.id === decodeURIComponent(approve[1]));
+      if (!order) { notFound(res); return; }
+      if (order.status === 'PENDENTE') {
+        const user = users.find((item) => item.id === order.userId);
+        if (!user) { json(res, 409, { ok: false, error: 'O usuário deste pedido não existe mais.' }); return; }
+        user.minutes = Number(user.minutes || 0) + order.minutes;
+        if (order.packageId) {
+          const item = packages.find((catalogItem) => catalogItem.id === order.packageId);
+          if (item) servers.push({ id: crypto.randomUUID(), name: `${item.name} • FiveM`, type: 'FiveM RP', userId: user.id, ram: item.ram, vcpu: item.vcpu, gpu: item.gpu, storage: item.storage, status: 'offline', createdAt: new Date().toISOString() });
+        }
+        order.status = 'APROVADO'; order.approvedAt = new Date().toISOString();
+        order.paymentMessage = 'Aprovado manualmente pelo administrador.';
+        saveDatabase();
+      }
+      json(res, 200, { ok: true, order }); return;
+    }
+
+    notFound(res); return;
+  }
+
+  /*
+   * STATUS DO STREAMING
+   */
+  if (
+    method === 'GET' &&
+    pathname === '/api/stream/status'
+  ) {
     json(res, 200, {
       ok: true,
-      users: users.map(publicUser),
-      totalUsers: users.length,
-      streaming: {
-        ...streaming
-      }
+      streaming: streaming
     });
 
     return;
   }
 
   /*
-   * ADMIN ADD TIME
+   * JOGADOR PEDE PARA INICIAR FIVE M
    */
-
   if (
-    req.method === 'POST' &&
-    pathname === '/api/admin/time/add'
+    method === 'POST' &&
+    pathname === '/api/stream/start'
   ) {
-    const session = requireAdmin(req, res);
+    const user = getCurrentUser(req);
 
-    if (!session) {
+    if (!user) {
+      unauthorized(res);
+      return;
+    }
+
+    if (!streaming.enabled) {
+      json(res, 400, {
+        ok: false,
+        error:
+          'O streaming está desativado pelo administrador.'
+      });
+
+      return;
+    }
+
+    if (
+      streaming.status !== 'online' ||
+      !streaming.lastHeartbeat ||
+      Date.now() - new Date(streaming.lastHeartbeat).getTime() > 90000
+    ) {
+      json(res, 400, {
+        ok: false,
+        error:
+          'O PC de streaming está offline.'
+      });
+
+      return;
+    }
+
+    if (user.minutes <= 0) {
+      json(res, 400, {
+        ok: false,
+        error:
+          'Você não possui tempo disponível.'
+      });
+
+      return;
+    }
+
+    agentCommands.push({
+      command: 'start_fivem',
+      createdAt: Date.now(),
+      userId: user.id
+    });
+
+    streaming.status = 'starting';
+    streaming.message =
+      'Iniciando FiveM...';
+
+    json(res, 200, {
+      ok: true,
+      message:
+        'Comando para iniciar o FiveM enviado ao PC de streaming.'
+    });
+
+    return;
+  }
+
+  /*
+   * PAINEL ADMIN
+   */
+  if (
+    method === 'GET' &&
+    pathname === '/api/admin/overview'
+  ) {
+    const admin =
+      getAdminSession(req);
+
+    if (!admin) {
+      unauthorized(res);
+      return;
+    }
+
+    json(res, 200, {
+      ok: true,
+      users: users.map((user) => ({
+        id: user.id,
+        name: user.name,
+        username: user.username,
+        email: user.email,
+        minutes: user.minutes,
+        online: false
+      })),
+      streaming: streaming,
+      servers: servers.map((item) => ({ ...item, userName: (users.find((user) => user.id === item.userId) || {}).name || 'Sem vínculo' })),
+      orders: orders.map((item) => ({ ...item, userName: (users.find((user) => user.id === item.userId) || {}).name || 'Usuário removido' })),
+      tickets: tickets.map((item) => ({ ...item })),
+      packages: packages.map((item) => ({ ...item })),
+      minutesRateCents: database.minutesRateCents,
+      siteConfig: database.siteConfig
+    });
+
+    return;
+  }
+
+  /*
+   * ADMIN STATUS
+   */
+  if (
+    method === 'GET' &&
+    pathname === '/api/admin/stream'
+  ) {
+    const admin =
+      getAdminSession(req);
+
+    if (!admin) {
+      unauthorized(res);
+      return;
+    }
+
+    json(res, 200, {
+      ok: true,
+      streaming: streaming
+    });
+
+    return;
+  }
+
+  /*
+   * ADMIN INICIA FIVE M
+   */
+  if (
+    method === 'POST' &&
+    pathname === '/api/admin/stream/start'
+  ) {
+    const admin =
+      getAdminSession(req);
+
+    if (!admin) {
+      unauthorized(res);
+      return;
+    }
+
+    if (
+      streaming.status !== 'online' ||
+      !streaming.lastHeartbeat ||
+      Date.now() - new Date(streaming.lastHeartbeat).getTime() > 90000
+    ) {
+      json(res, 409, { ok: false, error: 'O agente GameCloud não está conectado. Nenhum comando foi enviado e o status real não foi alterado.' });
+      return;
+    }
+
+    agentCommands.push({
+      command: 'start_fivem',
+      createdAt: Date.now(),
+      userId: null
+    });
+
+    streaming.status = 'starting';
+    streaming.message =
+      'Administrador solicitou o início do FiveM.';
+
+    json(res, 200, {
+      ok: true,
+      message:
+        'Comando para iniciar o FiveM enviado ao PC.'
+    });
+
+    return;
+  }
+
+  /*
+   * ADMIN PARA FIVE M
+   */
+  if (
+    method === 'POST' &&
+    pathname === '/api/admin/stream/stop'
+  ) {
+    const admin =
+      getAdminSession(req);
+
+    if (!admin) {
+      unauthorized(res);
+      return;
+    }
+
+    if (
+      streaming.status !== 'online' ||
+      !streaming.lastHeartbeat ||
+      Date.now() - new Date(streaming.lastHeartbeat).getTime() > 90000
+    ) {
+      json(res, 409, { ok: false, error: 'O agente GameCloud não está conectado. Nenhum comando foi enviado e o status real não foi alterado.' });
+      return;
+    }
+
+    agentCommands.push({
+      command: 'stop_fivem',
+      createdAt: Date.now(),
+      userId: null
+    });
+
+    streaming.status = 'stopping';
+    streaming.message =
+      'Administrador solicitou o encerramento do FiveM.';
+
+    json(res, 200, {
+      ok: true,
+      message:
+        'Comando para encerrar o FiveM enviado ao PC.'
+    });
+
+    return;
+  }
+
+  /*
+   * ADMIN ATIVA/DESATIVA STREAMING
+   */
+  if (
+    method === 'POST' &&
+    pathname === '/api/admin/stream/toggle'
+  ) {
+    const admin =
+      getAdminSession(req);
+
+    if (!admin) {
+      unauthorized(res);
       return;
     }
 
     try {
-      const body = await readBody(req);
-
-      const email = normalizeEmail(body.email);
-      const minutes = Number(body.minutes);
+      const body =
+        await readBody(req);
 
       if (
-        !email ||
-        !Number.isFinite(minutes) ||
-        minutes <= 0
+        typeof body.enabled !==
+        'boolean'
       ) {
-        json(res, 400, {
-          ok: false,
-          error: 'E-mail ou quantidade de minutos inválidos.'
-        });
+        badRequest(
+          res,
+          'Informe enabled como verdadeiro ou falso.'
+        );
 
         return;
       }
 
-      const user = findUser(email);
+      streaming.enabled =
+        body.enabled;
+
+      if (!streaming.enabled) {
+        streaming.message =
+          'Streaming desativado pelo administrador.';
+      } else {
+        streaming.message =
+          'Streaming ativado pelo administrador.';
+      }
+
+      json(res, 200, {
+        ok: true,
+        message:
+          streaming.enabled
+            ? 'Streaming ativado.'
+            : 'Streaming desativado.',
+        streaming: streaming
+      });
+
+      return;
+    } catch (error) {
+      serverError(
+        res,
+        'Erro ao alterar o streaming.'
+      );
+
+      return;
+    }
+  }
+
+  /*
+   * ADMIN ALTERA TEMPO DO JOGADOR
+   */
+  if (
+    method === 'POST' &&
+    pathname === '/api/admin/time/add'
+  ) {
+    const admin =
+      getAdminSession(req);
+
+    if (!admin) {
+      unauthorized(res);
+      return;
+    }
+
+    try {
+      const body =
+        await readBody(req);
+
+      const email = String(
+        body.email || ''
+      ).trim().toLowerCase();
+
+      const minutes = Number(
+        body.minutes
+      );
+
+      if (!email) {
+        badRequest(
+          res,
+          'Informe o e-mail do jogador.'
+        );
+
+        return;
+      }
+
+      if (
+        !Number.isSafeInteger(minutes) ||
+        minutes < 1 ||
+        minutes > 100000
+      ) {
+        badRequest(
+          res,
+          'Informe de 1 a 100000 minutos.'
+        );
+
+        return;
+      }
+
+      const user =
+        findUserByEmail(email);
 
       if (!user) {
         json(res, 404, {
           ok: false,
-          error: 'Usuário não encontrado.'
+          error:
+            'Jogador não encontrado.'
         });
 
         return;
       }
 
-      user.minutes =
-        Number(user.minutes || 0) +
-        Math.floor(minutes);
-
-      saveUsers();
+      user.minutes += minutes;
+      saveDatabase();
 
       json(res, 200, {
         ok: true,
-        message: 'Minutos adicionados.',
+        message:
+          'Tempo adicionado com sucesso.',
         user: publicUser(user)
       });
 
       return;
-    } catch {
-      json(res, 400, {
-        ok: false,
-        error: 'Dados inválidos.'
-      });
+    } catch (error) {
+      serverError(
+        res,
+        'Erro ao adicionar tempo.'
+      );
 
       return;
     }
   }
 
   /*
-   * ADMIN STREAM TOGGLE
+   * HEARTBEAT DO PC
    */
-
   if (
-    req.method === 'POST' &&
-    pathname === '/api/admin/stream/toggle'
-  ) {
-    const session = requireAdmin(req, res);
-
-    if (!session) {
-      return;
-    }
-
-    try {
-      const body = await readBody(req);
-
-      if (typeof body.enabled === 'boolean') {
-        streaming.enabled = body.enabled;
-      } else {
-        streaming.enabled = !streaming.enabled;
-      }
-
-      if (!streaming.enabled) {
-        streaming.status = 'offline';
-        streaming.message = 'Streaming desativado pelo administrador.';
-      }
-
-      json(res, 200, {
-        ok: true,
-        streaming: {
-          ...streaming
-        }
-      });
-
-      return;
-    } catch {
-      json(res, 400, {
-        ok: false,
-        error: 'Dados inválidos.'
-      });
-
-      return;
-    }
-  }
-
-  /*
-   * ADMIN STREAM START
-   */
-
-  if (
-    req.method === 'POST' &&
-    pathname === '/api/admin/stream/start'
-  ) {
-    const session = requireAdmin(req, res);
-
-    if (!session) {
-      return;
-    }
-
-    streaming.enabled = true;
-    streaming.status = 'online';
-    streaming.message = 'Streaming iniciado pelo administrador.';
-    streaming.lastHeartbeat = new Date().toISOString();
-
-    json(res, 200, {
-      ok: true,
-      streaming: {
-        ...streaming
-      }
-    });
-
-    return;
-  }
-
-  /*
-   * ADMIN STREAM STOP
-   */
-
-  if (
-    req.method === 'POST' &&
-    pathname === '/api/admin/stream/stop'
-  ) {
-    const session = requireAdmin(req, res);
-
-    if (!session) {
-      return;
-    }
-
-    streaming.status = 'offline';
-    streaming.message = 'Streaming parado pelo administrador.';
-
-    json(res, 200, {
-      ok: true,
-      streaming: {
-        ...streaming
-      }
-    });
-
-    return;
-  }
-
-  /*
-   * STREAM AGENT HEARTBEAT
-   */
-
-  if (
-    req.method === 'POST' &&
+    method === 'POST' &&
     pathname === '/api/agent/heartbeat'
   ) {
     if (!agentAuthorized(req)) {
@@ -1089,57 +1446,47 @@ async function handle(req, res) {
     }
 
     try {
-      const body = await readBody(req);
+      const body =
+        await readBody(req);
+
+      streaming.status =
+        body.status || 'online';
+
+      streaming.game =
+        body.game || 'FiveM';
+
+      streaming.host =
+        body.host ||
+        'PC-GAMECLOUD';
+
+      streaming.message =
+        body.message ||
+        'PC de streaming online.';
 
       streaming.lastHeartbeat =
         new Date().toISOString();
 
-      streaming.status =
-        body.status === 'offline'
-          ? 'offline'
-          : 'online';
-
-      if (body.game) {
-        streaming.game = String(body.game);
-      }
-
-      if (body.host) {
-        streaming.host = String(body.host);
-      }
-
-      if (body.message) {
-        streaming.message = String(body.message);
-      } else {
-        streaming.message =
-          streaming.status === 'online'
-            ? 'PC de streaming online.'
-            : 'PC de streaming offline.';
-      }
-
       json(res, 200, {
         ok: true,
-        streaming: {
-          ...streaming
-        }
+        streaming: streaming
       });
 
       return;
-    } catch {
-      json(res, 400, {
-        ok: false,
-        error: 'Dados inválidos.'
-      });
+    } catch (error) {
+      serverError(
+        res,
+        'Erro no heartbeat.'
+      );
 
       return;
     }
   }
 
   /*
-   * STREAM AGENT COMMAND
+   * AGENTE BUSCA COMANDO
    */
-
   if (
-    req.method === 'POST' &&
+    method === 'GET' &&
     pathname === '/api/agent/command'
   ) {
     if (!agentAuthorized(req)) {
@@ -1147,49 +1494,80 @@ async function handle(req, res) {
       return;
     }
 
-    try {
-      const body = await readBody(req);
+    const command =
+      agentCommands.shift() || null;
 
-      const command = String(
-        body.command || ''
-      ).trim();
-
-      if (!command) {
-        json(res, 400, {
-          ok: false,
-          error: 'Comando não informado.'
-        });
-
-        return;
-      }
-
+    if (command) {
       console.log(
-        `Comando recebido do agente: ${command}`
+        `Comando entregue ao agente: ${command.command}`
       );
+    }
+
+    json(res, 200, {
+      ok: true,
+      command: command
+        ? command.command
+        : null,
+      message: command
+        ? 'Comando disponível.'
+        : 'Nenhum comando pendente.'
+    });
+
+    return;
+  }
+
+  /*
+   * AGENTE ATUALIZA STATUS
+   */
+  if (
+    method === 'POST' &&
+    pathname === '/api/agent/status'
+  ) {
+    if (!agentAuthorized(req)) {
+      unauthorized(res);
+      return;
+    }
+
+    try {
+      const body =
+        await readBody(req);
+
+      streaming.status =
+        body.status ||
+        streaming.status;
+
+      streaming.message =
+        body.message ||
+        streaming.message;
+
+      streaming.host =
+        body.host ||
+        streaming.host;
+
+      streaming.lastHeartbeat =
+        new Date().toISOString();
 
       json(res, 200, {
         ok: true,
-        command,
-        message: 'Comando recebido.'
+        streaming: streaming
       });
 
       return;
-    } catch {
-      json(res, 400, {
-        ok: false,
-        error: 'Dados inválidos.'
-      });
+    } catch (error) {
+      serverError(
+        res,
+        'Erro ao atualizar status do agente.'
+      );
 
       return;
     }
   }
 
   /*
-   * STREAM AGENT STATUS
+   * STATUS DO AGENTE
    */
-
   if (
-    req.method === 'GET' &&
+    method === 'GET' &&
     pathname === '/api/agent/status'
   ) {
     if (!agentAuthorized(req)) {
@@ -1199,58 +1577,273 @@ async function handle(req, res) {
 
     json(res, 200, {
       ok: true,
-      streaming: {
-        ...streaming
-      }
+      streaming: streaming
     });
 
     return;
   }
 
   /*
-   * UNKNOWN ROUTE
+   * AGENTE PODE COLOCAR COMANDO NA FILA
    */
+  if (
+    method === 'POST' &&
+    pathname === '/api/agent/command'
+  ) {
+    if (!agentAuthorized(req)) {
+      unauthorized(res);
+      return;
+    }
 
-  notFound(res);
-}
-
-const server = http.createServer(
-  async (req, res) => {
     try {
-      await handle(req, res);
-    } catch (error) {
-      console.error('Erro inesperado:', error);
+      const body =
+        await readBody(req);
 
-      if (!res.headersSent) {
-        json(res, 500, {
-          ok: false,
-          error: 'Erro interno do servidor.'
-        });
-      } else {
-        res.end();
+      if (!body.command) {
+        badRequest(
+          res,
+          'Comando não informado.'
+        );
+
+        return;
       }
+
+      agentCommands.push({
+        command: String(
+          body.command
+        ),
+        createdAt: Date.now(),
+        userId:
+          body.userId || null
+      });
+
+      json(res, 200, {
+        ok: true,
+        message:
+          'Comando adicionado à fila.'
+      });
+
+      return;
+    } catch (error) {
+      serverError(
+        res,
+        'Erro ao adicionar comando.'
+      );
+
+      return;
     }
   }
-);
 
+  /*
+   * ARQUIVOS DO SITE
+   */
+  let filePath;
+
+  if (pathname === '/') {
+    filePath = path.join(
+      __dirname,
+      'index.html'
+    );
+  } else {
+    filePath = path.join(
+      __dirname,
+      pathname.replace(/^\/+/, '')
+    );
+  }
+
+  const projectRoot =
+    path.resolve(__dirname);
+
+  const resolvedFile =
+    path.resolve(filePath);
+
+  const publicFiles = new Set([
+    'index.html', 'app.js', 'imperio-abertura.png',
+    'imperio-admin.png', 'imperio-usuario.png'
+  ]);
+  const relativeFile = path.relative(projectRoot, resolvedFile).replace(/\\/g, '/');
+
+  if (
+    resolvedFile !== projectRoot &&
+    !resolvedFile.startsWith(
+      projectRoot + path.sep
+    )
+  ) {
+    notFound(res);
+    return;
+  }
+
+  if (!publicFiles.has(relativeFile)) {
+    notFound(res);
+    return;
+  }
+
+  if (resolvedFile === DATA_FILE || resolvedFile.startsWith(path.dirname(DATA_FILE) + path.sep) || path.basename(resolvedFile) === 'gamecloud.json') {
+    notFound(res);
+    return;
+  }
+
+  fs.stat(
+    resolvedFile,
+    (error, stats) => {
+      if (
+        error ||
+        !stats.isFile()
+      ) {
+        notFound(res);
+        return;
+      }
+
+      const ext =
+        path.extname(
+          resolvedFile
+        ).toLowerCase();
+
+      const contentTypes = {
+        '.html':
+          'text/html; charset=utf-8',
+
+        '.js':
+          'application/javascript; charset=utf-8',
+
+        '.css':
+          'text/css; charset=utf-8',
+
+        '.json':
+          'application/json; charset=utf-8',
+
+        '.png':
+          'image/png',
+
+        '.jpg':
+          'image/jpeg',
+
+        '.jpeg':
+          'image/jpeg',
+
+        '.svg':
+          'image/svg+xml',
+
+        '.ico':
+          'image/x-icon'
+      };
+
+      const contentType =
+        contentTypes[ext] ||
+        'application/octet-stream';
+
+      fs.readFile(
+        resolvedFile,
+        (readError, data) => {
+          if (readError) {
+            text(
+              res,
+              500,
+              'Erro ao carregar arquivo.'
+            );
+
+            return;
+          }
+
+          res.writeHead(200, {
+            'Content-Type':
+              contentType,
+
+            'Cache-Control':
+              'no-cache',
+
+            'Access-Control-Allow-Origin':
+              '*'
+          });
+
+          res.end(data);
+        }
+      );
+    }
+  );
+});
+
+/*
+ * LIMPEZA DE SESSÕES E TOKENS
+ */
+setInterval(() => {
+  const now = Date.now();
+
+  for (
+    const [token, session]
+    of sessions.entries()
+  ) {
+    if (
+      now > session.expiresAt
+    ) {
+      sessions.delete(token);
+    }
+  }
+
+  for (
+    const [token, reset]
+    of resetTokens.entries()
+  ) {
+    if (
+      now > reset.expiresAt
+    ) {
+      resetTokens.delete(token);
+    }
+  }
+}, 1000 * 60 * 10);
+
+/*
+ * OFFLINE SE O PC PARAR DE RESPONDER
+ */
+setInterval(() => {
+  if (
+    streaming.lastHeartbeat &&
+    Date.now() -
+      new Date(
+        streaming.lastHeartbeat
+      ).getTime() >
+      90000
+  ) {
+    streaming.status =
+      'offline';
+
+    streaming.message =
+      'PC de streaming sem comunicação.';
+  }
+}, 30000);
+
+/*
+ * INICIA O SERVIDOR
+ */
 server.listen(
   PORT,
-  '0.0.0.0',
   () => {
     console.log(
-      `Império GameCloud 4.1.0 rodando na porta ${PORT}`
+      `Império GameCloud 4.2.0 rodando na porta ${PORT}`
     );
 
     console.log(
-      `ADMIN_USER configurado: ${Boolean(ADMIN_USER)}`
+      `STREAM_AGENT_KEY configurada: ${Boolean(
+        STREAM_AGENT_KEY
+      )}`
     );
 
     console.log(
-      `ADMIN_PASSWORD configurada: ${Boolean(ADMIN_PASSWORD)}`
+      `ADMIN_PASSWORD configurada: ${Boolean(
+        ADMIN_PASSWORD
+      )}`
     );
 
     console.log(
-      `STREAM_AGENT_KEY configurada: ${Boolean(STREAM_AGENT_KEY)}`
+      `ADMIN_USER configurado: ${Boolean(
+        ADMIN_USER
+      )}`
+    );
+
+    console.log(
+      `USER_PASSWORD configurada: ${Boolean(
+        USER_PASSWORD
+      )}`
     );
   }
 );
