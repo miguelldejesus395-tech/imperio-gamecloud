@@ -1,309 +1,3137 @@
+/* =========================================================
+   IMPÉRIO GAMECLOUD
+   APP.JS
+   ========================================================= */
+
 'use strict';
 
-const API_BASE = '/api/';
-const CART_KEY = 'igc_cart_v1';
-let token = localStorage.getItem('igc_token') || sessionStorage.getItem('igc_token') || '';
-let role = localStorage.getItem('igc_role') || sessionStorage.getItem('igc_role') || '';
+/* ---------------------------------------------------------
+   CONFIGURAÇÃO
+--------------------------------------------------------- */
+
+const API_BASE = '/api';
+
+const defaultSiteConfig = {
+  brandName: 'IMPÉRIO GAMECLOUD',
+
+  authTitle: 'Acesse sua conta',
+
+  authText:
+    'Entre para gerenciar seus servidores e seu tempo de jogo.',
+
+  home: {
+    eyebrow: 'Império GameCloud • FiveM',
+
+    title: 'Olá, {name}.',
+
+    text:
+      'Seu próximo mundo começa aqui. Acompanhe o tempo, gerencie seus servidores e monte sua configuração.',
+
+    primaryButton: 'Explorar pacotes',
+
+    secondaryButton: 'Meus servidores',
+
+    heroImage: 'imperio-usuario.png'
+  },
+
+  theme: {
+    gold: '#f2c94c',
+    background: '#090c12'
+  }
+};
+
+let siteConfig =
+  JSON.parse(JSON.stringify(defaultSiteConfig));
+
+let session = null;
+
 let currentUser = null;
-let catalog = [];
-let minutesRateCents = 10;
-let chosenPackage = null;
-let cart = readCart();
-let currentOrder = null;
-let adminData = null;
-const $ = (id) => document.getElementById(id);
-const money = (cents) => (Number(cents || 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-const fmtMinutes = (value) => `${Number(value || 0).toLocaleString('pt-BR')} min`;
 
-function readCart() {
-  try { return JSON.parse(localStorage.getItem(CART_KEY) || 'null') || { packageId: null, minutes: 0 }; }
-  catch { return { packageId: null, minutes: 0 }; }
-}
-function saveCart() { localStorage.setItem(CART_KEY, JSON.stringify(cart)); }
-function say(text, error = false) {
-  const node = $('message'); if (!node) return;
-  node.textContent = text || ''; node.className = `message${error ? ' error' : ''}`;
-  if (text) window.setTimeout(() => { if (node.textContent === text) node.textContent = ''; }, 7000);
-}
-function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); }
-async function api(route, method = 'GET', body) {
-  const headers = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const response = await fetch(API_BASE + route, { method, headers, credentials: 'same-origin', body: body === undefined ? undefined : JSON.stringify(body) });
-  let result = {};
-  try { result = await response.json(); } catch { /* resposta sem JSON */ }
-  if (!response.ok) throw new Error(result.error || result.message || `Erro ${response.status}`);
-  return result;
-}
-function setSession(result, remember) {
-  token = result.token || ''; role = result.role || 'player'; clearStoredSession();
-  const store = remember ? localStorage : sessionStorage;
-  store.setItem('igc_token', token); store.setItem('igc_role', role);
-}
-function clearStoredSession() {
-  localStorage.removeItem('igc_token'); localStorage.removeItem('igc_role');
-  sessionStorage.removeItem('igc_token'); sessionStorage.removeItem('igc_role');
-}
-function show(page) {
-  document.querySelectorAll('.page').forEach((item) => item.classList.toggle('active', item.id === page));
-  if (page === 'user') showUserPage('home');
-}
-const pageTitles = { home: 'Visão geral', servers: 'Meus servidores', buy: 'Comprar servidor', cart: 'Carrinho', payment: 'Pagamento', fivem: 'FiveM', orders: 'Pedidos', profile: 'Perfil', settings: 'Configurações', support: 'Suporte' };
-function showUserPage(page) {
-  document.querySelectorAll('.page').forEach((item) => item.classList.toggle('active', item.id === 'user'));
-  document.querySelectorAll('.content-section').forEach((item) => item.classList.toggle('active', item.id === page));
-  document.querySelectorAll('.nav-item[data-page]').forEach((item) => item.classList.toggle('active', item.dataset.page === page));
-  if ($('topTitle')) $('topTitle').textContent = pageTitles[page] || 'GameCloud';
-  if (page === 'cart') renderCart();
-  if (page === 'orders') loadOrders().catch((error) => say(error.message, true));
-  if (page === 'fivem') loadStream().catch((error) => say(error.message, true));
-  if (page === 'support') loadSupport().catch((error) => say(error.message, true));
-}
-function serverCard(server) {
-  const status = String(server.status || 'offline');
-  const isOnline = status === 'online';
-  return `<article class="server-card"><div class="server-card-top"><div><span class="eyebrow">${escapeHtml(server.type || 'Servidor')}</span><h3>${escapeHtml(server.name)}</h3><p>${escapeHtml(server.userName || 'Sua instância GameCloud')}</p></div><span class="status"><i class="dot ${isOnline ? 'online' : ''}"></i>${escapeHtml(status)}</span></div><div class="specs"><div class="spec"><small>RAM</small><strong>${Number(server.ram)} GB</strong></div><div class="spec"><small>vCPU</small><strong>${Number(server.vcpu)} cores</strong></div><div class="spec"><small>GPU</small><strong>${escapeHtml(server.gpu)}</strong></div><div class="spec"><small>Armazenamento</small><strong>${Number(server.storage)} GB</strong></div></div><div class="card-actions"><button class="btn primary small" data-fivem-start="${escapeHtml(server.id)}">Abrir FiveM</button><span class="muted small">${isOnline ? 'Estado reportado pelo agente' : 'Aguardando infraestrutura'}</span></div></article>`;
-}
-async function loadUser() {
-  const result = await api('me'); currentUser = result.user || result;
-  const name = currentUser.name || currentUser.username || 'Jogador';
-  if ($('sideName')) $('sideName').textContent = name;
-  if ($('topUser')) $('topUser').textContent = name;
-  if ($('greetingName')) $('greetingName').textContent = name;
-  if ($('minutes')) $('minutes').textContent = fmtMinutes(currentUser.minutes);
-  if ($('profileName')) $('profileName').value = name;
-  if ($('profileEmail')) $('profileEmail').value = currentUser.email || '';
-  if ($('profileUsername')) $('profileUsername').value = currentUser.username || '';
-  await Promise.all([loadCatalog(), loadServers(), loadOrders(), loadStream()]);
-  show('user'); showUserPage('home');
-}
-async function loadCatalog() {
-  const result = await api('packages'); catalog = Array.isArray(result.packages) ? result.packages : [];
-  minutesRateCents = Number(result.minutesRateCents ?? 0); renderCatalog(); renderSelection(); renderCart();
-}
-function renderCatalog() {
-  const root = $('packageGrid'); if (!root) return;
-  root.innerHTML = catalog.map((item) => `<article class="package-card ${chosenPackage === item.id ? 'selected' : ''}"><span class="eyebrow">Pacote GameCloud</span><h3>${escapeHtml(item.name)}</h3><p class="muted">${escapeHtml(item.description || 'Recursos dedicados para seu servidor.')}</p><div class="package-price">${money(item.priceCents)}</div><div class="package-specs"><span>RAM <b>${Number(item.ram)} GB</b></span><span>vCPU <b>${Number(item.vcpu)}</b></span><span>GPU <b>${escapeHtml(item.gpu)}</b></span><span>Armazenamento <b>${Number(item.storage)} GB</b></span></div><button class="btn ${chosenPackage === item.id ? 'primary' : ''} full" data-select-package="${escapeHtml(item.id)}">${chosenPackage === item.id ? 'Selecionado' : 'Selecionar pacote'}</button></article>`).join('');
-  if ($('minutesRateLabel')) $('minutesRateLabel').textContent = `Tarifa atual: ${money(minutesRateCents)} por minuto. O administrador pode alterá-la no catálogo.`;
-}
-function selectionCents() {
-  const selected = catalog.find((item) => item.id === chosenPackage);
-  const minutes = Number($('minuteChoice')?.value || 0);
-  return (selected?.priceCents || 0) + minutes * minutesRateCents;
-}
-function renderSelection() {
-  const root = $('selectionSummary'); if (!root) return;
-  const selected = catalog.find((item) => item.id === chosenPackage);
-  const minutes = Number($('minuteChoice')?.value || 0);
-  root.innerHTML = `<div class="summary-line"><span>Pacote</span><b>${selected ? escapeHtml(selected.name) : 'Não selecionado'}</b></div><div class="summary-line"><span>Tempo adicional</span><b>${fmtMinutes(minutes)}</b></div><div class="summary-line"><span>Subtotal do pacote</span><b>${money(selected?.priceCents || 0)}</b></div><div class="summary-line"><span>Subtotal do tempo</span><b>${money(minutes * minutesRateCents)}</b></div><div class="summary-line total"><span>Total</span><b>${money(selectionCents())}</b></div>`;
-}
-async function loadServers() {
-  const result = await api('servers'); const list = Array.isArray(result.servers) ? result.servers : [];
-  const markup = list.length ? list.map(serverCard).join('') : '<div class="panel muted">Você ainda não possui servidores. Escolha um pacote para começar.</div>';
-  if ($('serversList')) $('serversList').innerHTML = markup;
-  if ($('homeServers')) $('homeServers').innerHTML = list.length ? list.slice(0, 2).map(serverCard).join('') : '<div class="muted">Nenhum servidor vinculado ainda.</div>';
-  if ($('fivemServers')) $('fivemServers').innerHTML = list.length ? list.map(serverCard).join('') : '<div class="panel muted">Nenhuma instância com FiveM vinculada.</div>';
-  if ($('serverCount')) $('serverCount').textContent = String(list.length);
-}
-function cartTotals() {
-  const item = catalog.find((entry) => entry.id === cart.packageId);
-  const packageCents = item?.priceCents || 0;
-  const minutesCents = Math.max(0, Number(cart.minutes) || 0) * minutesRateCents;
-  return { item, packageCents, minutesCents, total: packageCents + minutesCents };
-}
-function renderCart() {
-  const root = $('cartContent'); if (!root) return;
-  const { item, packageCents, minutesCents, total } = cartTotals();
-  const hasCart = Boolean(item || Number(cart.minutes) > 0);
-  root.innerHTML = hasCart ? `<div class="panel-head"><div><h2>Itens da compra</h2><p>Um único pedido para o pacote e o tempo.</p></div><button id="clearCart" class="btn danger small">Remover</button></div>${item ? `<div class="summary-line"><span>Pacote ${escapeHtml(item.name)} • ${item.ram} GB RAM, ${item.vcpu} vCPU, ${escapeHtml(item.gpu)}</span><b>${money(packageCents)}</b></div>` : ''}${Number(cart.minutes) > 0 ? `<div class="summary-line"><span>${fmtMinutes(cart.minutes)}</span><b>${money(minutesCents)}</b></div>` : ''}` : '<div class="empty">Seu carrinho está vazio. Escolha um pacote e/ou minutos.</div>';
-  if ($('cartSummary')) $('cartSummary').innerHTML = `<div class="summary-line"><span>Pacote</span><b>${money(packageCents)}</b></div><div class="summary-line"><span>Tempo</span><b>${money(minutesCents)}</b></div><div class="summary-line total"><span>Total</span><b>${money(total)}</b></div>`;
-  if ($('continueCheckout')) $('continueCheckout').disabled = !hasCart;
-  $('clearCart')?.addEventListener('click', () => { cart = { packageId: null, minutes: 0 }; saveCart(); renderCart(); });
-}
-async function loadOrders() {
-  const result = await api('orders'); const items = Array.isArray(result.orders) ? result.orders : [];
-  if ($('pendingCount')) $('pendingCount').textContent = String(items.filter((item) => item.status === 'PENDENTE').length);
-  if ($('ordersList')) $('ordersList').innerHTML = items.length ? items.map((item) => `<article class="order-card"><div><span class="status">${escapeHtml(item.status)}</span><h3>${escapeHtml(item.packageName || 'Tempo de jogo')}</h3><p class="muted">${fmtMinutes(item.minutes)} • ${new Date(item.createdAt).toLocaleString('pt-BR')}</p><p class="muted small">${escapeHtml(item.paymentMessage || '')}</p></div><strong>${money(item.totalCents)}</strong></article>`).join('') : '<div class="panel muted">Nenhum pedido registrado.</div>';
-}
-async function loadStream() {
-  const result = await api('stream/status'); const stream = result.streaming || result;
-  const label = ({ online: 'Online', starting: 'Iniciando', stopping: 'Encerrando', error: 'Erro', offline: 'Offline' })[stream.status] || 'Desconhecido';
-  if ($('playerMiniStatus')) $('playerMiniStatus').textContent = label;
-  if ($('streamStatus')) $('streamStatus').innerHTML = `<i class="dot ${stream.status === 'online' ? 'online' : ''}"></i>${escapeHtml(label)}`;
-  if ($('streamMessage')) $('streamMessage').textContent = stream.message || 'Sem mensagem do agente.';
-  if ($('adminStreamStatus')) $('adminStreamStatus').textContent = label;
-  if ($('adminStreamMessage')) $('adminStreamMessage').textContent = stream.message || '—';
-  if ($('adminStreamHeartbeat')) $('adminStreamHeartbeat').textContent = stream.lastHeartbeat ? new Date(stream.lastHeartbeat).toLocaleString('pt-BR') : 'Sem heartbeat';
-  if ($('adminStreamShort')) $('adminStreamShort').textContent = label;
-  const toggle = $('toggleStream'); if (toggle) toggle.textContent = stream.enabled ? 'Desativar streaming' : 'Ativar streaming';
-}
-function renderPayment(order) {
-  currentOrder = order;
-  const root = $('paymentPanel'); if (!root) return;
-  root.innerHTML = `<div class="panel-head"><div><span class="eyebrow">Pedido ${escapeHtml(order.id.slice(0, 8))}</span><h2>Compra registrada</h2></div><span class="status">${escapeHtml(order.status)}</span></div><div class="summary-line"><span>Pacote</span><b>${escapeHtml(order.packageName || 'Não selecionado')}</b></div><div class="summary-line"><span>Tempo</span><b>${fmtMinutes(order.minutes)}</b></div><div class="summary-line total"><span>Total do pedido</span><b>${money(order.totalCents)}</b></div><div class="notice" style="margin-top:14px">${escapeHtml(order.paymentMessage)} Não informe dados de cartão nesta tela.</div><button class="btn ghost" data-page="orders" style="margin-top:14px">Ver histórico de pedidos</button>`;
-}
-function adminSection(page) {
-  document.querySelectorAll('.admin-section').forEach((item) => item.classList.toggle('active', item.id === `admin-${page}`));
-  document.querySelectorAll('.admin-tab').forEach((item) => item.classList.toggle('active', item.dataset.adminPage === page));
-  if (page === 'servers') loadAdmin().catch((error) => say(error.message, true));
-  if (page === 'orders') loadAdmin().catch((error) => say(error.message, true));
-  if (page === 'catalog') loadAdmin().catch((error) => say(error.message, true));
-}
-function renderAdmin(data) {
-  adminData = data;
-  const users = data.users || [], servers = data.servers || [], orders = data.orders || [];
-  if ($('adminUserCount')) $('adminUserCount').textContent = String(users.length);
-  if ($('adminServerCount')) $('adminServerCount').textContent = String(servers.length);
-  if ($('adminPendingCount')) $('adminPendingCount').textContent = String(orders.filter((item) => item.status === 'PENDENTE').length);
-  if ($('adminUsers')) $('adminUsers').innerHTML = users.map((user) => `<tr><td>${escapeHtml(user.name)}</td><td>${escapeHtml(user.username)}</td><td>${escapeHtml(user.email)}</td><td>${fmtMinutes(user.minutes)}</td></tr>`).join('') || '<tr><td colspan="4">Nenhum usuário.</td></tr>';
-  if ($('serverUser')) $('serverUser').innerHTML = '<option value="">Sem vínculo</option>' + users.map((user) => `<option value="${Number(user.id)}">${escapeHtml(user.name)} • ${escapeHtml(user.email)}</option>`).join('');
-  if ($('adminServers')) $('adminServers').innerHTML = servers.length ? servers.map((item) => `<article class="admin-server-row"><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.type)} • ${escapeHtml(item.userName || 'Sem vínculo')}</small></div><div><span class="status">${escapeHtml(item.status)}</span><small>${Number(item.ram)} GB RAM • ${Number(item.vcpu)} vCPU • ${escapeHtml(item.gpu)} • ${Number(item.storage)} GB</small></div><div class="card-actions"><button class="btn small" data-edit-server="${escapeHtml(item.id)}">Editar</button><button class="btn danger small" data-delete-server="${escapeHtml(item.id)}">Excluir</button><button class="btn small" data-server-action="start" data-server-id="${escapeHtml(item.id)}">Iniciar</button><button class="btn small" data-server-action="stop" data-server-id="${escapeHtml(item.id)}">Parar</button></div></article>`).join('') : '<div class="muted">Nenhum servidor cadastrado.</div>';
-  if ($('adminOrders')) $('adminOrders').innerHTML = orders.length ? orders.map((item) => `<article class="order-card"><div><span class="status">${escapeHtml(item.status)}</span><h3>${escapeHtml(item.userName)} • ${escapeHtml(item.packageName || 'Tempo')}</h3><p class="muted">${fmtMinutes(item.minutes)} • ${new Date(item.createdAt).toLocaleString('pt-BR')}</p><p class="muted small">${escapeHtml(item.paymentMessage)}</p></div><div><strong>${money(item.totalCents)}</strong>${item.status === 'PENDENTE' ? `<button class="btn primary small" data-approve-order="${escapeHtml(item.id)}">Aprovar manualmente</button>` : ''}</div></article>`).join('') : '<div class="panel muted">Nenhum pedido.</div>';
-  if ($('adminCatalog')) $('adminCatalog').innerHTML = (data.packages || []).map((item) => `<form class="panel admin-package-form" data-package-id="${escapeHtml(item.id)}"><div class="panel-head"><div><h2>${escapeHtml(item.name)}</h2><p>${Number(item.ram)} GB RAM • ${Number(item.vcpu)} vCPU • ${escapeHtml(item.gpu)}</p></div></div><div class="field"><label>Preço (R$)</label><input name="price" type="number" min="0" step="0.01" value="${(Number(item.priceCents) / 100).toFixed(2)}" required></div><button class="btn primary" style="margin-top:12px">Salvar preço</button></form>`).join('');
-  if ($('minutesRate')) $('minutesRate').value = (Number(data.minutesRateCents || 0) / 100).toFixed(2);
-  const tickets = data.tickets || [];
-  if ($('adminTickets')) $('adminTickets').innerHTML = tickets.length ? tickets.map((item) => `<article class="order-card"><div><span class="status">${escapeHtml(item.status)}</span><h3>${escapeHtml(item.subject)}</h3><p>${escapeHtml(item.userName)} • ${escapeHtml(item.email)}</p><p class="muted">${escapeHtml(item.message)}</p></div><small>${new Date(item.createdAt).toLocaleString('pt-BR')}</small></article>`).join('') : '<div class="muted">Nenhum chamado.</div>';
-}
-async function loadAdmin() { const result = await api('admin/overview'); renderAdmin(result); await loadStream(); }
-function clearServerForm() { $('serverForm')?.reset(); if ($('serverId')) $('serverId').value = ''; if ($('serverFormTitle')) $('serverFormTitle').textContent = 'Criar servidor'; }
-async function logout() {
-  try { await api('logout', 'POST', {}); } catch { /* sessão pode já ter expirado */ }
-  token = ''; role = ''; currentUser = null; clearStoredSession(); show('login'); say('Você saiu da sua conta.');
+let currentAdmin = false;
+
+let packages = [];
+
+let servers = [];
+
+let orders = [];
+
+let tickets = [];
+
+let selectedPackage = null;
+
+let selectedMinutes = 0;
+
+let cart = null;
+
+
+/* ---------------------------------------------------------
+   ELEMENTOS
+--------------------------------------------------------- */
+
+const $ = (selector) =>
+  document.querySelector(selector);
+
+const $$ = (selector) =>
+  Array.from(document.querySelectorAll(selector));
+
+
+/* ---------------------------------------------------------
+   MENSAGENS
+--------------------------------------------------------- */
+
+function showMessage(element, message, error = false) {
+
+  if (!element) return;
+
+  element.textContent = message || '';
+
+  element.classList.toggle('error', !!error);
 }
 
-function wireForms() {
-  $('loginForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    try { const result = await api('login', 'POST', { email: $('email').value.trim(), password: $('password').value }); setSession(result, $('remember').checked); await loadUser(); say('Login realizado.'); }
-    catch (error) { say(error.message, true); }
-  });
-  $('registerForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    try { const result = await api('users/register', 'POST', { name: $('rname').value.trim(), email: $('remail').value.trim(), password: $('rpassword').value }); show('login'); $('email').value = $('remail').value; say(result.message || 'Conta criada.'); }
-    catch (error) { say(error.message, true); }
-  });
-  $('forgotForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    try { const result = await api('forgot-password', 'POST', { email: $('femail').value.trim() }); say(`${result.message} Se não houver e-mail configurado, o administrador deve consultar o log privado do servidor.`); }
-    catch (error) { say(error.message, true); }
-  });
-  $('resetForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    try { const params = new URLSearchParams(location.search); const result = await api('reset-password', 'POST', { token: params.get('token') || params.get('reset') || '', password: $('newpassword').value }); show('login'); say(result.message || 'Senha atualizada.'); }
-    catch (error) { say(error.message, true); }
-  });
-  $('adminLoginForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    try { const result = await api('admin/login', 'POST', { username: $('adminUsername').value.trim(), password: $('adminPassword').value }); setSession(result, $('adminRemember').checked); show('admin'); adminSection('overview'); await loadAdmin(); say('Sessão administrativa iniciada.'); }
-    catch (error) { say(error.message, true); }
-  });
-  $('profileForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    try { const result = await api('me/profile', 'POST', { name: $('profileName').value.trim() }); currentUser = result.user; await loadUser(); showUserPage('profile'); say('Perfil atualizado.'); }
-    catch (error) { say(error.message, true); }
-  });
-  $('supportForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    try { await api('support', 'POST', { subject: $('supportSubject').value.trim(), message: $('supportMessage').value.trim() }); $('supportForm').reset(); await loadSupport(); say('Solicitação enviada para a equipe.'); }
-    catch (error) { say(error.message, true); }
-  });
-  $('serverForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const id = $('serverId').value;
-    const body = { id: id || undefined, name: $('serverName').value.trim(), type: $('serverType').value, userId: $('serverUser').value, ram: Number($('serverRam').value), vcpu: Number($('serverVcpu').value), gpu: $('serverGpu').value.trim(), storage: Number($('serverStorage').value), status: $('serverStatusInput').value };
-    try { await api('admin/servers', 'POST', body); clearServerForm(); await loadAdmin(); say('Servidor salvo. Nenhuma máquina física foi provisionada.'); }
-    catch (error) { say(error.message, true); }
-  });
-  $('minutePriceForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    try { await api('admin/minutes-price', 'POST', { priceCents: Math.round(Number($('minutesRate').value) * 100) }); await loadAdmin(); say('Preço por minuto atualizado.'); }
-    catch (error) { say(error.message, true); }
-  });
-  $('timeForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    try { await api('admin/time/add', 'POST', { email: $('playerEmail').value.trim(), minutes: Number($('addMinutes').value) }); $('timeForm').reset(); await loadAdmin(); say('Minutos adicionados.'); }
-    catch (error) { say(error.message, true); }
-  });
+
+/* ---------------------------------------------------------
+   API
+--------------------------------------------------------- */
+
+async function api(path, options = {}) {
+
+  const headers = {
+    ...(options.headers || {})
+  };
+
+  if (
+    options.body &&
+    typeof options.body !== 'string'
+  ) {
+    headers['Content-Type'] = 'application/json';
+
+    options.body =
+      JSON.stringify(options.body);
+  }
+
+  if (session && session.token) {
+
+    headers.Authorization =
+      `Bearer ${session.token}`;
+  }
+
+  const response =
+    await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers
+    });
+
+  let data = null;
+
+  const contentType =
+    response.headers.get('content-type') || '';
+
+  if (contentType.includes('application/json')) {
+
+    data = await response.json();
+
+  } else {
+
+    const text =
+      await response.text();
+
+    data = {
+      message: text
+    };
+  }
+
+  if (!response.ok) {
+
+    const error =
+      new Error(
+        data?.message ||
+        data?.error ||
+        `Erro HTTP ${response.status}`
+      );
+
+    error.status = response.status;
+
+    throw error;
+  }
+
+  return data;
 }
-async function loadSupport() {
-  const result = await api('support'); const items = result.tickets || [];
-  if ($('supportHistory')) $('supportHistory').innerHTML = items.length ? `<h3>Solicitações anteriores</h3>${items.map((item) => `<article class="order-card"><div><span class="status">${escapeHtml(item.status)}</span><h3>${escapeHtml(item.subject)}</h3><p class="muted">${escapeHtml(item.message)}</p></div><small>${new Date(item.createdAt).toLocaleString('pt-BR')}</small></article>`).join('')}` : '';
+
+
+/* ---------------------------------------------------------
+   SESSÃO
+--------------------------------------------------------- */
+
+function saveSession(data, remember = true) {
+
+  session = data;
+
+  const storage =
+    remember
+      ? localStorage
+      : sessionStorage;
+
+  localStorage.removeItem('gamecloud_session');
+  sessionStorage.removeItem('gamecloud_session');
+
+  storage.setItem(
+    'gamecloud_session',
+    JSON.stringify(data)
+  );
 }
-function wireActions() {
-  document.addEventListener('click', async (event) => {
-    const pageButton = event.target.closest('[data-page]');
-    if (pageButton) { showUserPage(pageButton.dataset.page); return; }
-    const button = event.target.closest('button'); if (!button) return;
-    try {
-      if (button.id === 'showRegister') { show('register'); return; }
-      if (button.id === 'showForgot') { show('forgot'); return; }
-      if (button.id === 'showAdmin') { show('adminLogin'); return; }
-      if (['backToLogin', 'backLoginFromRegister', 'backLoginFromForgot', 'backLoginFromReset'].includes(button.id)) { show('login'); return; }
-      if (button.id === 'logoutUser' || button.id === 'logoutAdmin') { await logout(); return; }
-      if (button.dataset.selectPackage) { chosenPackage = button.dataset.selectPackage; renderCatalog(); renderSelection(); return; }
-      if (button.id === 'addToCart') {
-        const minutes = Number($('minuteChoice').value || 0);
-        if (!chosenPackage && minutes <= 0) throw new Error('Selecione um pacote ou adicione minutos.');
-        cart = { packageId: chosenPackage, minutes }; saveCart(); renderCart(); showUserPage('cart'); say('Itens adicionados ao carrinho.'); return;
-      }
-      if (button.id === 'continueCheckout') {
-        const { item, total } = cartTotals();
-        if (!item && !cart.minutes) throw new Error('Seu carrinho está vazio.');
-        const result = await api('orders', 'POST', { packageId: item?.id || null, minutes: Number(cart.minutes || 0) });
-        cart = { packageId: null, minutes: 0 }; saveCart(); renderPayment(result.order); await loadOrders(); showUserPage('payment'); return;
-      }
-      if (button.id === 'refreshAdmin') { await loadAdmin(); say('Dados atualizados.'); return; }
-      if (button.id === 'refreshStream' || button.id === 'refreshAdminStream') { await loadStream(); say('Status atualizado.'); return; }
-      if (button.id === 'saveSettings') {
-        clearStoredSession(); const store = $('rememberSetting').checked ? localStorage : sessionStorage;
-        store.setItem('igc_token', token); store.setItem('igc_role', role); say('Preferência salva.'); return;
-      }
-      if (button.dataset.adminPage) { adminSection(button.dataset.adminPage); return; }
-      if (button.dataset.editServer) {
-        const item = adminData?.servers?.find((server) => server.id === button.dataset.editServer); if (!item) return;
-        $('serverId').value = item.id; $('serverName').value = item.name; $('serverType').value = item.type; $('serverUser').value = item.userId ?? ''; $('serverRam').value = item.ram; $('serverVcpu').value = item.vcpu; $('serverGpu').value = item.gpu; $('serverStorage').value = item.storage; $('serverStatusInput').value = item.status; $('serverFormTitle').textContent = 'Editar servidor'; $('serverName').focus(); return;
-      }
-      if (button.id === 'cancelServerEdit') { clearServerForm(); return; }
-      if (button.dataset.deleteServer) {
-        if (!window.confirm('Excluir este registro de servidor?')) return;
-        await api(`admin/servers/${encodeURIComponent(button.dataset.deleteServer)}/delete`, 'POST', {}); await loadAdmin(); say('Servidor excluído.'); return;
-      }
-      if (button.dataset.serverAction) {
-        await api(`admin/servers/${encodeURIComponent(button.dataset.serverId)}/${button.dataset.serverAction}`, 'POST', {}); return;
-      }
-      if (button.dataset.approveOrder) {
-        await api(`admin/orders/${encodeURIComponent(button.dataset.approveOrder)}/approve`, 'POST', {}); await loadAdmin(); say('Pedido aprovado; minutos creditados e servidor cadastrado como offline.'); return;
-      }
-      if (button.id === 'startStream' || button.id === 'stopStream') {
-        const action = button.id === 'startStream' ? 'start' : 'stop'; const result = await api(`admin/stream/${action}`, 'POST', {}); await loadStream(); say(result.message); return;
-      }
-      if (button.id === 'toggleStream') {
-        const result = await api('stream/status'); const stream = result.streaming || result;
-        await api('admin/stream/toggle', 'POST', { enabled: !stream.enabled }); await loadStream(); say('Configuração atualizada.'); return;
-      }
-      if (button.dataset.fivemStart !== undefined) {
-        const result = await api('stream/start', 'POST', {}); await loadStream(); say(result.message); return;
-      }
-    } catch (error) { say(error.message, true); }
-  });
-  document.addEventListener('submit', async (event) => {
-    const form = event.target.closest('.admin-package-form'); if (!form) return;
-    event.preventDefault();
-    try { await api('admin/packages', 'POST', { id: form.dataset.packageId, priceCents: Math.round(Number(form.elements.price.value) * 100) }); await loadCatalog(); await loadAdmin(); say('Preço do pacote atualizado.'); }
-    catch (error) { say(error.message, true); }
-  });
-  $('minuteChoice')?.addEventListener('change', renderSelection);
-}
-async function restoreSession() {
-  if (!token) { show('login'); return; }
+
+
+function loadStoredSession() {
+
+  let raw =
+    localStorage.getItem('gamecloud_session');
+
+  if (!raw) {
+
+    raw =
+      sessionStorage.getItem(
+        'gamecloud_session'
+      );
+  }
+
+  if (!raw) return null;
+
   try {
-    if (role === 'admin') { show('admin'); adminSection('overview'); await loadAdmin(); }
-    else { role = 'player'; await loadUser(); }
-  } catch { clearStoredSession(); token = ''; role = ''; show('login'); }
+
+    return JSON.parse(raw);
+
+  } catch {
+
+    localStorage.removeItem(
+      'gamecloud_session'
+    );
+
+    sessionStorage.removeItem(
+      'gamecloud_session'
+    );
+
+    return null;
+  }
 }
-document.addEventListener('DOMContentLoaded', () => {
-  wireForms(); wireActions();
-  $('rememberSetting').checked = Boolean(localStorage.getItem('igc_token'));
-  restoreSession().catch((error) => { console.error('Falha ao restaurar sessão GameCloud:', error); show('login'); });
-});
+
+
+function clearSession() {
+
+  session = null;
+
+  currentUser = null;
+
+  currentAdmin = false;
+
+  localStorage.removeItem(
+    'gamecloud_session'
+  );
+
+  sessionStorage.removeItem(
+    'gamecloud_session'
+  );
+}
+
+
+/* ---------------------------------------------------------
+   PÁGINAS DE AUTENTICAÇÃO
+--------------------------------------------------------- */
+
+function showPage(id) {
+
+  $$('.page').forEach(page => {
+
+    page.classList.toggle(
+      'active',
+      page.id === id
+    );
+
+  });
+}
+
+
+function showLogin() {
+
+  showPage('loginPage');
+}
+
+
+function showRegister() {
+
+  showPage('registerPage');
+}
+
+
+function showForgot() {
+
+  showPage('forgotPage');
+}
+
+
+function showReset() {
+
+  showPage('resetPage');
+}
+
+
+function showAdminLogin() {
+
+  showPage('adminLoginPage');
+}
+
+
+/* ---------------------------------------------------------
+   APLICAÇÃO
+--------------------------------------------------------- */
+
+function showUserApp() {
+
+  showPage('app');
+
+  currentAdmin = false;
+
+  setupUserNavigation();
+
+  showUserSection('home');
+
+  loadUserData();
+}
+
+
+function showAdminApp() {
+
+  showPage('admin');
+
+  currentAdmin = true;
+
+  setupAdminNavigation();
+
+  showAdminSection('overview');
+
+  loadAdminData();
+
+  loadSiteConfig();
+}
+
+
+/* ---------------------------------------------------------
+   NAVEGAÇÃO DO USUÁRIO
+--------------------------------------------------------- */
+
+function showUserSection(id) {
+
+  $$('.content-section').forEach(section => {
+
+    section.classList.toggle(
+      'active',
+      section.id === id
+    );
+
+  });
+
+  $$('.nav-item[data-page]').forEach(button => {
+
+    button.classList.toggle(
+      'active',
+      button.dataset.page === id
+    );
+
+  });
+
+  const titles = {
+
+    home: 'Visão geral',
+
+    servers: 'Meus servidores',
+
+    buy: 'Comprar servidor',
+
+    cart: 'Carrinho',
+
+    payment: 'Pagamento',
+
+    fivem: 'FiveM',
+
+    orders: 'Pedidos',
+
+    profile: 'Perfil',
+
+    settings: 'Configurações',
+
+    support: 'Suporte'
+  };
+
+  const title =
+    $('#topbarTitle');
+
+  if (title) {
+
+    title.textContent =
+      titles[id] || 'Império GameCloud';
+  }
+}
+
+
+function setupUserNavigation() {
+
+  $$('[data-page]').forEach(button => {
+
+    if (
+      button.dataset.page &&
+      !button.dataset.bound
+    ) {
+
+      button.dataset.bound = '1';
+
+      button.addEventListener(
+        'click',
+        () => {
+
+          showUserSection(
+            button.dataset.page
+          );
+
+        }
+      );
+    }
+
+  });
+}
+
+
+/* ---------------------------------------------------------
+   NAVEGAÇÃO ADMIN
+--------------------------------------------------------- */
+
+function showAdminSection(id) {
+
+  $$('.admin-section').forEach(section => {
+
+    section.classList.toggle(
+      'active',
+      section.id === `admin-${id}`
+    );
+
+  });
+
+  $$('.admin-tab').forEach(button => {
+
+    button.classList.toggle(
+      'active',
+      button.dataset.adminPage === id
+    );
+
+  });
+
+  if (id === 'editor') {
+
+    loadSiteConfig();
+
+  }
+
+}
+
+
+function setupAdminNavigation() {
+
+  $$('.admin-tab').forEach(button => {
+
+    if (button.dataset.bound) return;
+
+    button.dataset.bound = '1';
+
+    button.addEventListener(
+      'click',
+      () => {
+
+        showAdminSection(
+          button.dataset.adminPage
+        );
+
+      }
+    );
+
+  });
+}
+
+
+/* ---------------------------------------------------------
+   CONFIGURAÇÃO DO SITE
+--------------------------------------------------------- */
+
+function cloneDefaultSiteConfig() {
+
+  return JSON.parse(
+    JSON.stringify(defaultSiteConfig)
+  );
+}
+
+
+function mergeSiteConfig(config) {
+
+  const base =
+    cloneDefaultSiteConfig();
+
+  if (!config || typeof config !== 'object') {
+
+    return base;
+  }
+
+  return {
+
+    ...base,
+
+    ...config,
+
+    home: {
+      ...base.home,
+      ...(config.home || {})
+    },
+
+    theme: {
+      ...base.theme,
+      ...(config.theme || {})
+    }
+
+  };
+}
+
+
+/* ---------------------------------------------------------
+   APLICAR CONFIGURAÇÃO
+--------------------------------------------------------- */
+
+function applySiteConfig(config) {
+
+  siteConfig =
+    mergeSiteConfig(config);
+
+  const root =
+    document.documentElement;
+
+  root.style.setProperty(
+    '--gold',
+    siteConfig.theme.gold
+  );
+
+  root.style.setProperty(
+    '--gold2',
+    siteConfig.theme.gold
+  );
+
+  root.style.setProperty(
+    '--bg',
+    siteConfig.theme.background
+  );
+
+
+  /* Marca */
+
+  $$('.brand strong').forEach(element => {
+
+    element.textContent =
+      siteConfig.brandName;
+
+  });
+
+
+  /* Login */
+
+  const loginTitle =
+    $('#loginTitle');
+
+  if (loginTitle) {
+
+    loginTitle.textContent =
+      siteConfig.authTitle;
+
+  }
+
+
+  const loginText =
+    $('#loginText');
+
+  if (loginText) {
+
+    loginText.textContent =
+      siteConfig.authText;
+
+  }
+
+
+  /* Tela inicial */
+
+  const eyebrow =
+    $('#homeEyebrow');
+
+  if (eyebrow) {
+
+    eyebrow.textContent =
+      siteConfig.home.eyebrow;
+
+  }
+
+
+  const homeText =
+    $('#homeText');
+
+  if (homeText) {
+
+    homeText.textContent =
+      siteConfig.home.text;
+
+  }
+
+
+  const primary =
+    $('#homePrimaryButton');
+
+  if (primary) {
+
+    primary.textContent =
+      siteConfig.home.primaryButton;
+
+  }
+
+
+  const secondary =
+    $('#homeSecondaryButton');
+
+  if (secondary) {
+
+    secondary.textContent =
+      siteConfig.home.secondaryButton;
+
+  }
+
+
+  /* Imagem */
+
+  const hero =
+    $('#homeHero');
+
+  if (hero && siteConfig.home.heroImage) {
+
+    hero.style.backgroundImage =
+      `linear-gradient(90deg,#111720f5 0%,#111720db 48%,#11172035 100%),url("${siteConfig.home.heroImage}")`;
+
+  }
+
+
+  updateEditorPreview();
+
+}
+
+
+/* ---------------------------------------------------------
+   CARREGAR CONFIGURAÇÃO DO SERVIDOR
+--------------------------------------------------------- */
+
+async function loadSiteConfig() {
+
+  try {
+
+    const data =
+      await api('/site-config');
+
+    const config =
+      data?.siteConfig ||
+      data?.config ||
+      data;
+
+    siteConfig =
+      mergeSiteConfig(config);
+
+    applySiteConfig(siteConfig);
+
+    fillSiteEditor(siteConfig);
+
+  } catch (error) {
+
+    console.warn(
+      'Não foi possível carregar site-config:',
+      error
+    );
+
+    siteConfig =
+      cloneDefaultSiteConfig();
+
+    applySiteConfig(siteConfig);
+
+    fillSiteEditor(siteConfig);
+  }
+}
+
+
+/* ---------------------------------------------------------
+   PREENCHER EDITOR
+--------------------------------------------------------- */
+
+function fillSiteEditor(config) {
+
+  const fields = {
+
+    editorBrandName:
+      config.brandName,
+
+    editorAuthTitle:
+      config.authTitle,
+
+    editorAuthText:
+      config.authText,
+
+    editorHomeEyebrow:
+      config.home.eyebrow,
+
+    editorHomeTitle:
+      config.home.title,
+
+    editorHomeText:
+      config.home.text,
+
+    editorPrimaryButton:
+      config.home.primaryButton,
+
+    editorSecondaryButton:
+      config.home.secondaryButton,
+
+    editorGold:
+      config.theme.gold,
+
+    editorGoldText:
+      config.theme.gold,
+
+    editorBackground:
+      config.theme.background,
+
+    editorBackgroundText:
+      config.theme.background
+  };
+
+
+  Object.entries(fields)
+    .forEach(([id, value]) => {
+
+      const element =
+        document.getElementById(id);
+
+      if (element) {
+
+        element.value =
+          value ?? '';
+
+      }
+
+    });
+
+
+  const imageValue =
+    $('#editorHeroImageValue');
+
+  if (imageValue) {
+
+    imageValue.value =
+      config.home.heroImage || '';
+
+  }
+
+
+  const image =
+    $('#editorHeroImage');
+
+  if (
+    image &&
+    config.home.heroImage
+  ) {
+
+    image.src =
+      config.home.heroImage;
+
+    image.style.display =
+      'block';
+
+  }
+
+  updateEditorPreview();
+}
+/* =========================================================
+   EDITOR VISUAL
+   ========================================================= */
+
+function getEditorValue(id, fallback = '') {
+
+  const element =
+    document.getElementById(id);
+
+  if (!element) return fallback;
+
+  return element.value.trim();
+}
+
+
+function editorConfigFromForm() {
+
+  const config =
+    cloneDefaultSiteConfig();
+
+  config.brandName =
+    getEditorValue(
+      'editorBrandName',
+      config.brandName
+    );
+
+  config.authTitle =
+    getEditorValue(
+      'editorAuthTitle',
+      config.authTitle
+    );
+
+  config.authText =
+    getEditorValue(
+      'editorAuthText',
+      config.authText
+    );
+
+  config.home.eyebrow =
+    getEditorValue(
+      'editorHomeEyebrow',
+      config.home.eyebrow
+    );
+
+  config.home.title =
+    getEditorValue(
+      'editorHomeTitle',
+      config.home.title
+    );
+
+  config.home.text =
+    getEditorValue(
+      'editorHomeText',
+      config.home.text
+    );
+
+  config.home.primaryButton =
+    getEditorValue(
+      'editorPrimaryButton',
+      config.home.primaryButton
+    );
+
+  config.home.secondaryButton =
+    getEditorValue(
+      'editorSecondaryButton',
+      config.home.secondaryButton
+    );
+
+  config.home.heroImage =
+    getEditorValue(
+      'editorHeroImageValue',
+      config.home.heroImage
+    );
+
+  const gold =
+    getEditorValue(
+      'editorGoldText',
+      config.theme.gold
+    );
+
+  const background =
+    getEditorValue(
+      'editorBackgroundText',
+      config.theme.background
+    );
+
+  if (/^#[0-9a-fA-F]{6}$/.test(gold)) {
+
+    config.theme.gold =
+      gold;
+
+  }
+
+  if (/^#[0-9a-fA-F]{6}$/.test(background)) {
+
+    config.theme.background =
+      background;
+
+  }
+
+  return config;
+}
+
+
+/* ---------------------------------------------------------
+   PRÉVIA DO EDITOR
+--------------------------------------------------------- */
+
+function updateEditorPreview() {
+
+  const config =
+    editorConfigFromForm();
+
+  const previewEyebrow =
+    $('#previewEyebrow');
+
+  const previewTitle =
+    $('#previewTitle');
+
+  const previewText =
+    $('#previewText');
+
+  const previewPrimary =
+    $('#previewPrimary');
+
+  const previewSecondary =
+    $('#previewSecondary');
+
+  const previewHero =
+    $('#editorPreviewHero');
+
+
+  if (previewEyebrow) {
+
+    previewEyebrow.textContent =
+      config.home.eyebrow;
+
+  }
+
+
+  if (previewTitle) {
+
+    previewTitle.textContent =
+      config.home.title.replace(
+        '{name}',
+        'jogador'
+      );
+
+  }
+
+
+  if (previewText) {
+
+    previewText.textContent =
+      config.home.text;
+
+  }
+
+
+  if (previewPrimary) {
+
+    previewPrimary.textContent =
+      config.home.primaryButton;
+
+  }
+
+
+  if (previewSecondary) {
+
+    previewSecondary.textContent =
+      config.home.secondaryButton;
+
+  }
+
+
+  if (previewHero) {
+
+    previewHero.style.backgroundImage =
+      `linear-gradient(90deg,#111720f5 0%,#111720db 48%,#11172035 100%),url("${config.home.heroImage || 'imperio-usuario.png'}")`;
+
+  }
+
+}
+
+
+/* ---------------------------------------------------------
+   STATUS DO EDITOR
+--------------------------------------------------------- */
+
+function setEditorStatus(
+  message,
+  error = false
+) {
+
+  const element =
+    $('#editorStatus');
+
+  if (!element) return;
+
+  element.textContent =
+    message || '';
+
+  element.classList.toggle(
+    'error',
+    !!error
+  );
+}
+
+
+/* ---------------------------------------------------------
+   SALVAR EDITOR
+--------------------------------------------------------- */
+
+async function saveSiteConfig() {
+
+  const config =
+    editorConfigFromForm();
+
+  if (!config.brandName) {
+
+    setEditorStatus(
+      'Informe o nome da marca.',
+      true
+    );
+
+    return;
+
+  }
+
+  if (!config.authTitle) {
+
+    setEditorStatus(
+      'Informe o título da tela de login.',
+      true
+    );
+
+    return;
+
+  }
+
+  if (!config.home.title) {
+
+    setEditorStatus(
+      'Informe o título da tela inicial.',
+      true
+    );
+
+    return;
+
+  }
+
+  setEditorStatus(
+    'Salvando alterações...'
+  );
+
+
+  try {
+
+    const result =
+      await api(
+        '/admin/site-config',
+        {
+          method: 'POST',
+          body: {
+            siteConfig: config
+          }
+        }
+      );
+
+
+    siteConfig =
+      mergeSiteConfig(
+        result?.siteConfig ||
+        result?.config ||
+        config
+      );
+
+
+    applySiteConfig(
+      siteConfig
+    );
+
+    fillSiteEditor(
+      siteConfig
+    );
+
+
+    setEditorStatus(
+      '✓ Alterações publicadas com sucesso.'
+    );
+
+
+  } catch (error) {
+
+    console.error(
+      'Erro ao salvar editor:',
+      error
+    );
+
+    setEditorStatus(
+      error.message ||
+      'Não foi possível salvar as alterações.',
+      true
+    );
+
+  }
+
+}
+
+
+/* ---------------------------------------------------------
+   RESTAURAR PADRÃO
+--------------------------------------------------------- */
+
+function restoreSiteConfig() {
+
+  const config =
+    cloneDefaultSiteConfig();
+
+  fillSiteEditor(
+    config
+  );
+
+  applySiteConfig(
+    config
+  );
+
+  setEditorStatus(
+    'Padrão restaurado na prévia. Clique em "Publicar alterações" para salvar.'
+  );
+
+}
+
+
+/* ---------------------------------------------------------
+   UPLOAD DA IMAGEM
+--------------------------------------------------------- */
+
+function setupEditorImageUpload() {
+
+  const input =
+    $('#editorHeroUpload');
+
+  if (!input || input.dataset.bound) {
+    return;
+  }
+
+  input.dataset.bound =
+    '1';
+
+
+  input.addEventListener(
+    'change',
+    () => {
+
+      const file =
+        input.files?.[0];
+
+      if (!file) return;
+
+
+      if (!file.type.startsWith('image/')) {
+
+        setEditorStatus(
+          'Escolha uma imagem PNG, JPG ou WEBP.',
+          true
+        );
+
+        input.value =
+          '';
+
+        return;
+
+      }
+
+
+      const maxSize =
+        750 * 1024;
+
+
+      if (file.size > maxSize) {
+
+        setEditorStatus(
+          'A imagem é muito grande. O limite é 750 KB.',
+          true
+        );
+
+        input.value =
+          '';
+
+        return;
+
+      }
+
+
+      const reader =
+        new FileReader();
+
+
+      reader.onload = () => {
+
+        const result =
+          reader.result;
+
+        if (
+          typeof result !== 'string'
+        ) {
+
+          setEditorStatus(
+            'Não foi possível ler a imagem.',
+            true
+          );
+
+          return;
+
+        }
+
+
+        const hidden =
+          $('#editorHeroImageValue');
+
+        const preview =
+          $('#editorHeroImage');
+
+
+        if (hidden) {
+
+          hidden.value =
+            result;
+
+        }
+
+
+        if (preview) {
+
+          preview.src =
+            result;
+
+          preview.style.display =
+            'block';
+
+        }
+
+
+        updateEditorPreview();
+
+
+        setEditorStatus(
+          'Imagem carregada na prévia. Publique para salvar.'
+        );
+
+      };
+
+
+      reader.onerror = () => {
+
+        setEditorStatus(
+          'Erro ao ler a imagem.',
+          true
+        );
+
+      };
+
+
+      reader.readAsDataURL(file);
+
+    }
+  );
+
+}
+
+
+/* ---------------------------------------------------------
+   CAMPOS DO EDITOR EM TEMPO REAL
+--------------------------------------------------------- */
+
+function setupEditorLivePreview() {
+
+  const ids = [
+
+    'editorBrandName',
+
+    'editorAuthTitle',
+
+    'editorAuthText',
+
+    'editorHomeEyebrow',
+
+    'editorHomeTitle',
+
+    'editorHomeText',
+
+    'editorPrimaryButton',
+
+    'editorSecondaryButton',
+
+    'editorGoldText',
+
+    'editorBackgroundText'
+
+  ];
+
+
+  ids.forEach(id => {
+
+    const element =
+      document.getElementById(id);
+
+    if (!element || element.dataset.bound) {
+      return;
+    }
+
+    element.dataset.bound =
+      '1';
+
+
+    element.addEventListener(
+      'input',
+      () => {
+
+        const color =
+          id === 'editorGoldText'
+            ? $('#editorGold')
+            : id === 'editorBackgroundText'
+              ? $('#editorBackground')
+              : null;
+
+
+        if (color) {
+
+          const value =
+            element.value.trim();
+
+          if (
+            /^#[0-9a-fA-F]{6}$/.test(value)
+          ) {
+
+            color.value =
+              value;
+
+          }
+
+        }
+
+
+        updateEditorPreview();
+
+      }
+    );
+
+  });
+
+
+  const gold =
+    $('#editorGold');
+
+  if (
+    gold &&
+    !gold.dataset.bound
+  ) {
+
+    gold.dataset.bound =
+      '1';
+
+    gold.addEventListener(
+      'input',
+      () => {
+
+        const text =
+          $('#editorGoldText');
+
+        if (text) {
+
+          text.value =
+            gold.value;
+
+        }
+
+        updateEditorPreview();
+
+      }
+    );
+
+  }
+
+
+  const background =
+    $('#editorBackground');
+
+  if (
+    background &&
+    !background.dataset.bound
+  ) {
+
+    background.dataset.bound =
+      '1';
+
+    background.addEventListener(
+      'input',
+      () => {
+
+        const text =
+          $('#editorBackgroundText');
+
+        if (text) {
+
+          text.value =
+            background.value;
+
+        }
+
+        updateEditorPreview();
+
+      }
+    );
+
+  }
+
+}
+
+
+/* ---------------------------------------------------------
+   CONFIGURAR EDITOR
+--------------------------------------------------------- */
+
+function setupSiteEditor() {
+
+  const form =
+    $('#siteEditorForm');
+
+
+  if (
+    form &&
+    !form.dataset.bound
+  ) {
+
+    form.dataset.bound =
+      '1';
+
+
+    form.addEventListener(
+      'submit',
+      async event => {
+
+        event.preventDefault();
+
+        await saveSiteConfig();
+
+      }
+    );
+
+  }
+
+
+  const restore =
+    $('#restoreSiteConfig');
+
+
+  if (
+    restore &&
+    !restore.dataset.bound
+  ) {
+
+    restore.dataset.bound =
+      '1';
+
+    restore.addEventListener(
+      'click',
+      restoreSiteConfig
+    );
+
+  }
+
+
+  setupEditorImageUpload();
+
+  setupEditorLivePreview();
+
+}
+
+
+/* ---------------------------------------------------------
+   LOGIN
+--------------------------------------------------------- */
+
+async function handleLogin(event) {
+
+  event.preventDefault();
+
+  const message =
+    $('#message');
+
+  showMessage(
+    message,
+    'Entrando...'
+  );
+
+
+  const email =
+    $('#loginEmail')?.value.trim();
+
+  const password =
+    $('#loginPassword')?.value || '';
+
+  const remember =
+    $('#rememberMe')?.checked !== false;
+
+
+  try {
+
+    const result =
+      await api(
+        '/login',
+        {
+          method: 'POST',
+          body: {
+            email,
+            password,
+            remember
+          }
+        }
+      );
+
+
+    if (!result?.token) {
+
+      throw new Error(
+        'O servidor não retornou uma sessão válida.'
+      );
+
+    }
+
+
+    saveSession(
+      result,
+      remember
+    );
+
+
+    currentAdmin =
+      result.role === 'admin';
+
+
+    if (currentAdmin) {
+
+      showAdminApp();
+
+    } else {
+
+      currentUser =
+        result.user || null;
+
+      showUserApp();
+
+    }
+
+
+  } catch (error) {
+
+    console.error(
+      'Login:',
+      error
+    );
+
+    showMessage(
+      message,
+      error.message ||
+      'E-mail ou senha incorretos.',
+      true
+    );
+
+  }
+
+}
+
+
+/* ---------------------------------------------------------
+   REGISTRO
+--------------------------------------------------------- */
+
+async function handleRegister(event) {
+
+  event.preventDefault();
+
+  const message =
+    $('#registerMessage');
+
+
+  showMessage(
+    message,
+    'Criando sua conta...'
+  );
+
+
+  const name =
+    $('#registerName')?.value.trim();
+
+  const email =
+    $('#registerEmail')?.value.trim();
+
+  const password =
+    $('#registerPassword')?.value || '';
+
+
+  if (password.length < 8) {
+
+    showMessage(
+      message,
+      'A senha precisa ter pelo menos 8 caracteres.',
+      true
+    );
+
+    return;
+
+  }
+
+
+  try {
+
+    const result =
+      await api(
+        '/users/register',
+        {
+          method: 'POST',
+          body: {
+            name,
+            email,
+            password
+          }
+        }
+      );
+
+
+    showMessage(
+      message,
+      result?.message ||
+      'Conta criada com sucesso.'
+    );
+
+
+    setTimeout(
+      () => {
+
+        showLogin();
+
+        const loginEmail =
+          $('#loginEmail');
+
+        if (loginEmail) {
+
+          loginEmail.value =
+            email;
+
+        }
+
+      },
+      700
+    );
+
+
+  } catch (error) {
+
+    console.error(
+      'Registro:',
+      error
+    );
+
+    showMessage(
+      message,
+      error.message ||
+      'Não foi possível criar a conta.',
+      true
+    );
+
+  }
+
+}
+
+
+/* ---------------------------------------------------------
+   LOGIN ADMIN
+--------------------------------------------------------- */
+
+async function handleAdminLogin(event) {
+
+  event.preventDefault();
+
+  const message =
+    $('#adminLoginMessage');
+
+
+  showMessage(
+    message,
+    'Entrando...'
+  );
+
+
+  const user =
+    $('#adminUser')?.value.trim();
+
+  const password =
+    $('#adminPassword')?.value || '';
+
+
+  try {
+
+    const result =
+      await api(
+        '/login',
+        {
+          method: 'POST',
+          body: {
+            email: user,
+            password
+          }
+        }
+      );
+
+
+    if (
+      result?.role !== 'admin'
+    ) {
+
+      throw new Error(
+        'Essa conta não possui acesso administrativo.'
+      );
+
+    }
+
+
+    saveSession(
+      result,
+      true
+    );
+
+
+    showAdminApp();
+
+
+  } catch (error) {
+
+    console.error(
+      'Login admin:',
+      error
+    );
+
+    showMessage(
+      message,
+      error.message ||
+      'Credenciais administrativas inválidas.',
+      true
+    );
+
+  }
+
+}
+
+
+/* ---------------------------------------------------------
+   LOGOUT
+--------------------------------------------------------- */
+
+function logout() {
+
+  clearSession();
+
+  showLogin();
+
+}
+
+
+async function logoutAdmin() {
+
+  clearSession();
+
+  showLogin();
+
+}
+/* =========================================================
+   DADOS DO USUÁRIO
+   ========================================================= */
+
+async function loadUserData() {
+  try {
+    const result = await api('/me');
+
+    currentUser = result.user || result;
+
+    const name =
+      currentUser.name ||
+      currentUser.username ||
+      currentUser.email ||
+      'Jogador';
+
+    if ($('sideName')) $('sideName').textContent = name;
+    if ($('topUser')) $('topUser').textContent = name;
+    if ($('greetingName')) {
+      $('greetingName').textContent =
+        name;
+    }
+
+    if ($('minutes')) {
+      $('minutes').textContent =
+        Number(currentUser.minutes || 0).toLocaleString('pt-BR') + ' min';
+    }
+
+    if ($('profileName')) {
+      $('profileName').value = currentUser.name || '';
+    }
+
+    if ($('profileEmail')) {
+      $('profileEmail').value = currentUser.email || '';
+    }
+
+    if ($('profileUsername')) {
+      $('profileUsername').value = currentUser.username || '';
+    }
+
+    await Promise.all([
+      loadPackages(),
+      loadServers(),
+      loadOrders(),
+      loadSupport()
+    ]);
+
+  } catch (error) {
+    console.error(error);
+    throw error;
+  }
+}
+
+
+/* =========================================================
+   PACOTES / CATÁLOGO
+   ========================================================= */
+
+async function loadPackages() {
+  try {
+    const result = await api('/packages');
+
+    packages = Array.isArray(result.packages)
+      ? result.packages
+      : [];
+
+    minutesRateCents =
+      Number(result.minutesRateCents || 0);
+
+    renderPackages();
+    renderCart();
+
+  } catch (error) {
+    console.error('Erro ao carregar pacotes:', error);
+  }
+}
+
+
+function renderPackages() {
+  const root = $('packageGrid');
+
+  if (!root) return;
+
+  if (!packages.length) {
+    root.innerHTML = `
+      <div class="panel">
+        <h3>Nenhum pacote disponível</h3>
+        <p class="muted">
+          O administrador ainda não cadastrou pacotes.
+        </p>
+      </div>
+    `;
+    return;
+  }
+
+  root.innerHTML = packages.map(pkg => `
+    <article class="package-card">
+
+      <span class="eyebrow">
+        PACOTE GAMECLOUD
+      </span>
+
+      <h3>
+        ${escapeHtml(pkg.name)}
+      </h3>
+
+      <p class="muted">
+        ${escapeHtml(
+          pkg.description ||
+          'Recursos dedicados para seu servidor.'
+        )}
+      </p>
+
+      <div class="package-price">
+        ${formatMoney(pkg.priceCents)}
+      </div>
+
+      <div class="package-specs">
+
+        <span>
+          RAM
+          <b>${Number(pkg.ram || 0)} GB</b>
+        </span>
+
+        <span>
+          vCPU
+          <b>${Number(pkg.vcpu || 0)}</b>
+        </span>
+
+        <span>
+          GPU
+          <b>${escapeHtml(pkg.gpu || '—')}</b>
+        </span>
+
+        <span>
+          Armazenamento
+          <b>${Number(pkg.storage || 0)} GB</b>
+        </span>
+
+      </div>
+
+      <button
+        class="btn primary full"
+        data-select-package="${escapeHtml(pkg.id)}"
+      >
+        Selecionar pacote
+      </button>
+
+    </article>
+  `).join('');
+}
+
+
+/* =========================================================
+   SERVIDORES
+   ========================================================= */
+
+async function loadServers() {
+  try {
+    const result = await api('/servers');
+
+    servers = Array.isArray(result.servers)
+      ? result.servers
+      : [];
+
+    renderServers();
+
+  } catch (error) {
+    console.error('Erro ao carregar servidores:', error);
+  }
+}
+
+
+function renderServers() {
+  const root = $('serversList');
+
+  if (!root) return;
+
+  if (!servers.length) {
+    root.innerHTML = `
+      <div class="panel">
+        <h3>Nenhum servidor</h3>
+        <p class="muted">
+          Você ainda não possui servidores.
+        </p>
+      </div>
+    `;
+    return;
+  }
+
+  root.innerHTML = servers.map(server => {
+
+    const online =
+      String(server.status || '').toLowerCase() === 'online';
+
+    return `
+      <article class="server-card">
+
+        <div class="server-card-top">
+
+          <div>
+
+            <span class="eyebrow">
+              ${escapeHtml(server.type || 'Servidor')}
+            </span>
+
+            <h3>
+              ${escapeHtml(server.name || 'Servidor')}
+            </h3>
+
+            <p>
+              ${escapeHtml(
+                server.userName ||
+                'Sua instância GameCloud'
+              )}
+            </p>
+
+          </div>
+
+          <span class="status">
+
+            <i class="dot ${online ? 'online' : ''}"></i>
+
+            ${escapeHtml(
+              server.status || 'offline'
+            )}
+
+          </span>
+
+        </div>
+
+        <div class="specs">
+
+          <div class="spec">
+            <small>RAM</small>
+            <strong>
+              ${Number(server.ram || 0)} GB
+            </strong>
+          </div>
+
+          <div class="spec">
+            <small>vCPU</small>
+            <strong>
+              ${Number(server.vcpu || 0)}
+            </strong>
+          </div>
+
+          <div class="spec">
+            <small>GPU</small>
+            <strong>
+              ${escapeHtml(server.gpu || '—')}
+            </strong>
+          </div>
+
+          <div class="spec">
+            <small>SSD</small>
+            <strong>
+              ${Number(server.storage || 0)} GB
+            </strong>
+          </div>
+
+        </div>
+
+        <div class="card-actions">
+
+          <button
+            class="btn primary small"
+            data-fivem-start="${escapeHtml(server.id)}"
+          >
+            Abrir FiveM
+          </button>
+
+        </div>
+
+      </article>
+    `;
+
+  }).join('');
+
+  if ($('serverCount')) {
+    $('serverCount').textContent =
+      String(servers.length);
+  }
+}
+
+
+/* =========================================================
+   CARRINHO
+   ========================================================= */
+
+function renderCart() {
+
+  const root = $('cartContent');
+
+  if (!root) return;
+
+  const pkg = packages.find(
+    item => item.id === cart.packageId
+  );
+
+  const minutes =
+    Number(cart.minutes || 0);
+
+  const packagePrice =
+    Number(pkg?.priceCents || 0);
+
+  const minutesPrice =
+    minutes * Number(minutesRateCents || 0);
+
+  const total =
+    packagePrice + minutesPrice;
+
+  if (!pkg && minutes <= 0) {
+
+    root.innerHTML = `
+      <div class="empty">
+
+        <h3>Seu carrinho está vazio</h3>
+
+        <p>
+          Escolha um pacote ou adicione tempo
+          para continuar.
+        </p>
+
+      </div>
+    `;
+
+    if ($('cartSummary')) {
+      $('cartSummary').innerHTML = `
+        <div class="summary-line">
+          <span>Total</span>
+          <b>R$ 0,00</b>
+        </div>
+      `;
+    }
+
+    if ($('continueCheckout')) {
+      $('continueCheckout').disabled = true;
+    }
+
+    return;
+  }
+
+  root.innerHTML = `
+
+    <div class="panel-head">
+
+      <div>
+        <span class="eyebrow">
+          SEU CARRINHO
+        </span>
+
+        <h2>
+          Itens selecionados
+        </h2>
+      </div>
+
+      <button
+        class="btn danger small"
+        id="clearCart"
+      >
+        Limpar
+      </button>
+
+    </div>
+
+    ${
+      pkg
+        ? `
+          <div class="summary-line">
+
+            <span>
+              ${escapeHtml(pkg.name)}
+            </span>
+
+            <b>
+              ${formatMoney(packagePrice)}
+            </b>
+
+          </div>
+        `
+        : ''
+    }
+
+    ${
+      minutes > 0
+        ? `
+          <div class="summary-line">
+
+            <span>
+              ${minutes.toLocaleString('pt-BR')} minutos
+            </span>
+
+            <b>
+              ${formatMoney(minutesPrice)}
+            </b>
+
+          </div>
+        `
+        : ''
+    }
+
+  `;
+
+  if ($('cartSummary')) {
+
+    $('cartSummary').innerHTML = `
+
+      <div class="summary-line">
+
+        <span>Pacote</span>
+
+        <b>
+          ${formatMoney(packagePrice)}
+        </b>
+
+      </div>
+
+      <div class="summary-line">
+
+        <span>Tempo</span>
+
+        <b>
+          ${formatMoney(minutesPrice)}
+        </b>
+
+      </div>
+
+      <div class="summary-line total">
+
+        <span>Total</span>
+
+        <b>
+          ${formatMoney(total)}
+        </b>
+
+      </div>
+
+    `;
+  }
+
+  if ($('continueCheckout')) {
+    $('continueCheckout').disabled = false;
+  }
+
+  $('clearCart')?.addEventListener(
+    'click',
+    () => {
+
+      cart = {
+        packageId: null,
+        minutes: 0
+      };
+
+      saveCart();
+      renderCart();
+
+    }
+  );
+}
+
+
+/* =========================================================
+   PEDIDOS
+   ========================================================= */
+
+async function loadOrders() {
+
+  try {
+
+    const result =
+      await api('/orders');
+
+    orders =
+      Array.isArray(result.orders)
+        ? result.orders
+        : [];
+
+    renderOrders();
+
+  } catch (error) {
+
+    console.error(
+      'Erro ao carregar pedidos:',
+      error
+    );
+
+  }
+}
+
+
+function renderOrders() {
+
+  const root =
+    $('ordersList');
+
+  if (!root) return;
+
+  if (!orders.length) {
+
+    root.innerHTML = `
+      <div class="panel">
+        <h3>Nenhum pedido</h3>
+        <p class="muted">
+          Seus pedidos aparecerão aqui.
+        </p>
+      </div>
+    `;
+
+    return;
+  }
+
+  root.innerHTML =
+    orders.map(order => `
+
+      <article class="order-card">
+
+        <div>
+
+          <span class="status">
+            ${escapeHtml(order.status || 'PENDENTE')}
+          </span>
+
+          <h3>
+            ${escapeHtml(
+              order.packageName ||
+              'Tempo de jogo'
+            )}
+          </h3>
+
+          <p class="muted">
+
+            ${Number(order.minutes || 0)
+              .toLocaleString('pt-BR')}
+            min
+
+            •
+
+            ${
+              order.createdAt
+                ? new Date(
+                    order.createdAt
+                  ).toLocaleString('pt-BR')
+                : ''
+            }
+
+          </p>
+
+        </div>
+
+        <strong>
+          ${formatMoney(order.totalCents)}
+        </strong>
+
+      </article>
+
+    `).join('');
+}
+
+
+/* =========================================================
+   SUPORTE
+   ========================================================= */
+
+async function loadSupport() {
+
+  try {
+
+    const result =
+      await api('/support');
+
+    tickets =
+      Array.isArray(result.tickets)
+        ? result.tickets
+        : [];
+
+    renderSupport();
+
+  } catch (error) {
+
+    console.error(
+      'Erro ao carregar suporte:',
+      error
+    );
+
+  }
+}
+
+
+function renderSupport() {
+
+  const root =
+    $('supportHistory');
+
+  if (!root) return;
+
+  if (!tickets.length) {
+
+    root.innerHTML = `
+      <div class="muted">
+        Nenhuma solicitação enviada.
+      </div>
+    `;
+
+    return;
+  }
+
+  root.innerHTML = tickets.map(ticket => `
+
+    <article class="order-card">
+
+      <div>
+
+        <span class="status">
+          ${escapeHtml(
+            ticket.status || 'ABERTO'
+          )}
+        </span>
+
+        <h3>
+          ${escapeHtml(
+            ticket.subject || 'Suporte'
+          )}
+        </h3>
+
+        <p>
+          ${escapeHtml(
+            ticket.message || ''
+          )}
+        </p>
+
+      </div>
+
+      <small>
+
+        ${
+          ticket.createdAt
+            ? new Date(
+                ticket.createdAt
+              ).toLocaleString('pt-BR')
+            : ''
+        }
+
+      </small>
+
+    </article>
+
+  `).join('');
+}
+
+
+/* =========================================================
+   PAINEL ADMINISTRADOR
+   ========================================================= */
+
+async function loadAdminData() {
+
+  try {
+
+    const result =
+      await api('/admin/overview');
+
+    adminData = result;
+
+    renderAdminDashboard(result);
+
+  } catch (error) {
+
+    console.error(
+      'Erro ao carregar painel administrativo:',
+      error
+    );
+
+    throw error;
+  }
+}
+
+
+function renderAdminDashboard(data) {
+
+  const users =
+    Array.isArray(data.users)
+      ? data.users
+      : [];
+
+  const adminServers =
+    Array.isArray(data.servers)
+      ? data.servers
+      : [];
+
+  const adminOrders =
+    Array.isArray(data.orders)
+      ? data.orders
+      : [];
+
+  const adminPackages =
+    Array.isArray(data.packages)
+      ? data.packages
+      : [];
+
+  if ($('adminUserCount')) {
+    $('adminUserCount').textContent =
+      users.length;
+  }
+
+  if ($('adminServerCount')) {
+    $('adminServerCount').textContent =
+      adminServers.length;
+  }
+
+  if ($('adminPendingCount')) {
+
+    $('adminPendingCount').textContent =
+      adminOrders.filter(
+        order =>
+          String(order.status)
+            .toUpperCase() === 'PENDENTE'
+      ).length;
+
+  }
+
+  renderAdminUsers(users);
+  renderAdminServers(adminServers);
+  renderAdminOrders(adminOrders);
+  renderAdminPackages(adminPackages);
+
+  if ($('minutesRate')) {
+
+    $('minutesRate').value =
+      (
+        Number(
+          data.minutesRateCents || 0
+        ) / 100
+      ).toFixed(2);
+
+  }
+
+  renderAdminTickets(
+    Array.isArray(data.tickets)
+      ? data.tickets
+      : []
+  );
+}
+
+
+/* =========================================================
+   ADMIN — USUÁRIOS
+   ========================================================= */
+
+function renderAdminUsers(users) {
+
+  const root =
+    $('adminUsers');
+
+  if (!root) return;
+
+  if (!users.length) {
+
+    root.innerHTML = `
+      <tr>
+        <td colspan="4">
+          Nenhum usuário cadastrado.
+        </td>
+      </tr>
+    `;
+
+    return;
+  }
+
+  root.innerHTML =
+    users.map(user => `
+
+      <tr>
+
+        <td>
+          ${escapeHtml(
+            user.name || '—'
+          )}
+        </td>
+
+        <td>
+          ${escapeHtml(
+            user.username || '—'
+          )}
+        </td>
+
+        <td>
+          ${escapeHtml(
+            user.email || '—'
+          )}
+        </td>
+
+        <td>
+          ${Number(
+            user.minutes || 0
+          ).toLocaleString('pt-BR')}
+          min
+        </td>
+
+      </tr>
+
+    `).join('');
+}
+
+
+/* =========================================================
+   ADMIN — SERVIDORES
+   ========================================================= */
+
+function renderAdminServers(list) {
+
+  const root =
+    $('adminServers');
+
+  if (!root) return;
+
+  if (!list.length) {
+
+    root.innerHTML = `
+      <div class="muted">
+        Nenhum servidor cadastrado.
+      </div>
+    `;
+
+    return;
+  }
+
+  root.innerHTML =
+    list.map(server => `
+
+      <article class="admin-server-row">
+
+        <div>
+
+          <strong>
+            ${escapeHtml(
+              server.name || 'Servidor'
+            )}
+          </strong>
+
+          <small>
+            ${escapeHtml(
+              server.type || 'FiveM'
+            )}
+
+            •
+
+            ${escapeHtml(
+              server.userName ||
+              'Sem vínculo'
+            )}
+          </small>
+
+        </div>
+
+        <div>
+
+          <span class="status">
+            ${escapeHtml(
+              server.status || 'offline'
+            )}
+          </span>
+
+          <small>
+            ${Number(server.ram || 0)} GB RAM
+            •
+            ${Number(server.vcpu || 0)} vCPU
+            •
+            ${escapeHtml(server.gpu || '—')}
+            •
+            ${Number(server.storage || 0)} GB
+          </small>
+
+        </div>
+
+        <div class="card-actions">
+
+          <button
+            class="btn small"
+            data-edit-server="${escapeHtml(server.id)}"
+          >
+            Editar
+          </button>
+
+          <button
+            class="btn danger small"
+            data-delete-server="${escapeHtml(server.id)}"
+          >
+            Excluir
+          </button>
+
+        </div>
+
+      </article>
+
+    `).join('');
+}
+
+
+/* =========================================================
+   ADMIN — PEDIDOS
+   ========================================================= */
+
+function renderAdminOrders(list) {
+
+  const root =
+    $('adminOrders');
+
+  if (!root) return;
+
+  if (!list.length) {
+
+    root.innerHTML = `
+      <div class="panel muted">
+        Nenhum pedido registrado.
+      </div>
+    `;
+
+    return;
+  }
+
+  root.innerHTML =
+    list.map(order => `
+
+      <article class="order-card">
+
+        <div>
+
+          <span class="status">
+            ${escapeHtml(
+              order.status || 'PENDENTE'
+            )}
+          </span>
+
+          <h3>
+
+            ${escapeHtml(
+              order.userName ||
+              order.email ||
+              'Usuário'
+            )}
+
+            •
+
+            ${escapeHtml(
+              order.packageName ||
+              'Tempo'
+            )}
+
+          </h3>
+
+          <p class="muted">
+
+            ${Number(
+              order.minutes || 0
+            ).toLocaleString('pt-BR')}
+            min
+
+          </p>
+
+        </div>
+
+        <div>
+
+          <strong>
+            ${formatMoney(
+              order.totalCents
+            )}
+          </strong>
+
+          ${
+            String(order.status)
+              .toUpperCase() === 'PENDENTE'
+              ? `
+                <button
+                  class="btn primary small"
+                  data-approve-order="${escapeHtml(order.id)}"
+                >
+                  Aprovar
+                </button>
+              `
+              : ''
+          }
+
+        </div>
+
+      </article>
+
+    `).join('');
+}
+
+
+/* =========================================================
+   ADMIN — CATÁLOGO
+   ========================================================= */
+
+function renderAdminPackages(list) {
+
+  const root =
+    $('adminCatalog');
+
+  if (!root) return;
+
+  if (!list.length) {
+
+    root.innerHTML = `
+      <div class="muted">
+        Nenhum pacote cadastrado.
+      </div>
+    `;
+
+    return;
+  }
+
+  root.innerHTML =
+    list.map(pkg => `
+
+      <form
+        class="panel admin-package-form"
+        data-package-id="${escapeHtml(pkg.id)}"
+      >
+
+        <div class="panel-head">
+
+          <div>
+
+            <span class="eyebrow">
+              PACOTE
+            </span>
+
+            <h2>
+              ${escapeHtml(pkg.name)}
+            </h2>
+
+            <p class="muted">
+
+              ${Number(pkg.ram || 0)} GB RAM
+
+              •
+
+              ${Number(pkg.vcpu || 0)} vCPU
+
+              •
+
+              ${escapeHtml(pkg.gpu || '—')}
+
+            </p>
+
+          </div>
+
+        </div>
+
+        <div class="field">
+
+          <label>
+            Preço
+          </label>
+
+          <input
+            name="price"
+            type="number"
+            min="0"
+            step="0.01"
+            value="${
+              (
+                Number(pkg.priceCents || 0) / 100
+              ).toFixed(2)
+            }"
+            required
+          >
+
+        </div>
+
+        <button
+          class="btn primary"
+          type="submit"
+        >
+          Salvar preço
+        </button>
+
+      </form>
+
+    `).join('');
+}
+
+
+/* =========================================================
+   ADMIN — SUPORTE
+   ========================================================= */
+
+function renderAdminTickets(list) {
+
+  const root =
+    $('adminTickets');
+
+  if (!root) return;
+
+  if (!list.length) {
+
+    root.innerHTML = `
+      <div class="muted">
+        Nenhum chamado.
+      </div>
+    `;
+
+    return;
+  }
+
+  root.innerHTML =
+    list.map(ticket => `
+
+      <article class="order-card">
+
+        <div>
+
+          <span class="status">
+            ${escapeHtml(
+              ticket.status || 'ABERTO'
+            )}
+          </span>
+
+          <h3>
+            ${escapeHtml(
+              ticket.subject || 'Suporte'
+            )}
+          </h3>
+
+          <p>
+            ${escapeHtml(
+              ticket.userName ||
+              ticket.email ||
+              ''
+            )}
+          </p>
+
+          <p class="muted">
+            ${escapeHtml(
+              ticket.message || ''
+            )}
+          </p>
+
+        </div>
+
+      </article>
+
+    `).join('');
+}
+
+
+/* =========================================================
+   ADMIN — FORMULÁRIO DE SERVIDOR
+   ========================================================= */
+
+function clearServerForm() {
+
+  const form =
+    $('serverForm');
+
+  if (form) {
+    form.reset();
+  }
+
+  if ($('serverId')) {
+    $('serverId').value = '';
+  }
+
+  if ($('serverFormTitle')) {
+    $('serverFormTitle').textContent =
+      'Criar servidor';
+  }
+}
+
+
+/* =========================================================
+   ADMIN — EVENTOS EXTRAS
+   ========================================================= */
+
+document.addEventListener(
+  'click',
+  async event => {
+
+    const editButton =
+      event.target.closest(
+        '[data-edit-server]'
+      );
+
+    if (editButton) {
+
+      const id =
+        editButton.dataset.editServer;
+
+      const server =
+        adminData?.servers?.find(
+          item => String(item.id) === String(id)
+        );
+
+      if (!server) return;
+
+      if ($('serverId'))
+        $('serverId').value =
+          server.id || '';
+
+      if ($('serverName'))
+        $('serverName').value =
+          server.name || '';
+
+      if ($('serverType'))
+        $('serverType').value =
+          server.type || 'FiveM';
+
+      if ($('serverRam'))
+        $('serverRam').value =
+          server.ram || 0;
+
+      if ($('serverVcpu'))
+        $('serverVcpu').value =
+          server.vcpu || 0;
+
+      if ($('serverGpu'))
+        $('serverGpu').value =
+          server.gpu || '';
+
+      if ($('serverStorage'))
+        $('serverStorage').value =
+          server.storage || 0;
+
+      if ($('serverStatusInput'))
+        $('serverStatusInput').value =
+          server.status || 'offline';
+
+      if ($('serverFormTitle'))
+        $('serverFormTitle').textContent =
+          'Editar servidor';
+
+      return;
+    }
+
+    const deleteButton =
+      event.target.closest(
+        '[data-delete-server]'
+      );
+
+    if (deleteButton) {
+
+      const id =
+        deleteButton.dataset.deleteServer;
+
+      if (
+        !window.confirm(
+          'Tem certeza que deseja excluir este servidor?'
+        )
+      ) {
+        return;
+      }
+
+      try {
+
+        await api(
+          `/admin/servers/${encodeURIComponent(id)}/delete`,
+          'POST',
+          {}
+        );
+
+        await loadAdminData();
+
+        say(
+          'Servidor excluído.'
+        );
+
+      } catch (error) {
+
+        say(
+          error.message,
+          true
+        );
+
+      }
+
+      return;
+    }
+
+    const approveButton =
+      event.target.closest(
+        '[data-approve-order]'
+      );
+
+    if (approveButton) {
+
+      try {
+
+        await api(
+          `/admin/orders/${encodeURIComponent(
+            approveButton.dataset.approveOrder
+          )}/approve`,
+          'POST',
+          {}
+        );
+
+        await loadAdminData();
+
+        say(
+          'Pedido aprovado.'
+        );
+
+      } catch (error) {
+
+        say(
+          error.message,
+          true
+        );
+
+      }
+
+    }
+
+  }
+);
+
+
+/* =========================================================
+   COMPATIBILIDADE COM O EDITOR
+   ========================================================= */
+
+function formatMoney(cents) {
+
+  return (
+    Number(cents || 0) / 100
+  ).toLocaleString(
+    'pt-BR',
+    {
+      style: 'currency',
+      currency: 'BRL'
+    }
+  );
+
+}
+
+
+/* =========================================================
+   FINALIZAÇÃO
+   ========================================================= */
+
+window.GameCloudEditor = {
+  getConfig: () =>
+    JSON.parse(
+      JSON.stringify(siteConfig)
+    ),
+
+  setConfig: config => {
+
+    siteConfig =
+      mergeSiteConfig(config);
+
+    applySiteConfig(
+      siteConfig
+    );
+
+    fillSiteEditor(
+      siteConfig
+    );
+
+    updateEditorPreview();
+  }
+};
+/*
+=========================================================
+FIM DO APP.JS
+=========================================================
+
+Agora o app.js possui:
+
+✓ Login
+✓ Cadastro
+✓ Recuperação de senha
+✓ Painel do usuário
+✓ Catálogo
+✓ Carrinho
+✓ Pedidos
+✓ Servidores
+✓ FiveM
+✓ Suporte
+✓ Painel administrativo
+✓ Gerenciamento de servidores
+✓ Gerenciamento de pedidos
+✓ Gerenciamento de catálogo
+✓ Editor visual
+✓ Alteração de textos
+✓ Alteração de cores
+✓ Alteração de banner/imagem
+✓ Pré-visualização
+✓ Salvar configuração
+✓ Restaurar configuração padrão
+
+IMPORTANTE:
+O editor visual depende das novas rotas do server.js:
+GET  /api/site-config
+POST /api/admin/site-config
+
+Portanto, o próximo arquivo que precisamos corrigir é o
+SERVER.JS. Sem essas rotas, o botão "Salvar alterações"
+do editor não terá onde guardar as mudanças.
+=========================================================
+*/
