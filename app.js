@@ -119,7 +119,18 @@ async function api(path, options = {}) {
       JSON.stringify(options.body);
   }
 
-  if (session && session.token) {
+  const isAuthEntryPoint =
+    path === '/login' ||
+    path === '/admin/login' ||
+    path === '/users/register' ||
+    path === '/forgot-password' ||
+    path === '/reset-password';
+
+  if (
+    session &&
+    session.token &&
+    !isAuthEntryPoint
+  ) {
 
     headers.Authorization =
       `Bearer ${session.token}`;
@@ -1458,6 +1469,13 @@ async function handleLogin(event) {
 
   event.preventDefault();
 
+  /*
+     O login comum sempre começa uma sessão nova.
+     Isso impede que um token/admin anterior seja reutilizado
+     nesta tela.
+  */
+  clearSession();
+
   const message =
     $('#message');
 
@@ -1502,28 +1520,28 @@ async function handleLogin(event) {
     }
 
 
+    if (result.role === 'admin') {
+
+      throw new Error(
+        'Use o acesso administrativo para entrar como administrador.'
+      );
+
+    }
+
     saveSession(
-      result,
+      {
+        ...result,
+        role: 'player'
+      },
       remember
     );
 
+    currentAdmin = false;
 
-    currentAdmin =
-      result.role === 'admin';
+    currentUser =
+      result.user || null;
 
-
-    if (currentAdmin) {
-
-      showAdminApp();
-
-    } else {
-
-      currentUser =
-        result.user || null;
-
-      showUserApp();
-
-    }
+    showUserApp();
 
 
   } catch (error) {
@@ -1656,6 +1674,12 @@ async function handleAdminLogin(event) {
 
   event.preventDefault();
 
+  /*
+     O acesso administrativo também começa uma sessão limpa,
+     sem herdar o token do usuário comum.
+  */
+  clearSession();
+
   const message =
     $('#adminLoginMessage');
 
@@ -1731,20 +1755,38 @@ async function handleAdminLogin(event) {
    LOGOUT
 --------------------------------------------------------- */
 
-function logout() {
+async function logout() {
 
-  clearSession();
-
-  showLogin();
+  try {
+    if (session?.token) {
+      await api('/logout', {
+        method: 'POST'
+      });
+    }
+  } catch (error) {
+    console.warn('Logout:', error);
+  } finally {
+    clearSession();
+    showLogin();
+  }
 
 }
 
 
 async function logoutAdmin() {
 
-  clearSession();
-
-  showLogin();
+  try {
+    if (session?.token) {
+      await api('/logout', {
+        method: 'POST'
+      });
+    }
+  } catch (error) {
+    console.warn('Logout admin:', error);
+  } finally {
+    clearSession();
+    showLogin();
+  }
 
 }
 /* =========================================================
@@ -3377,9 +3419,20 @@ async function restoreSession() {
       throw new Error('Sessão inválida.');
     }
 
+    const serverRole =
+      result?.role === 'admin'
+        ? 'admin'
+        : result?.role === 'player'
+          ? 'player'
+          : '';
+
+    if (!serverRole) {
+      throw new Error('Sessão sem função válida.');
+    }
+
     session = {
       ...session,
-      role: result.role,
+      role: serverRole,
       user: result.user || null
     };
 
@@ -3387,15 +3440,20 @@ async function restoreSession() {
       ? localStorage
       : sessionStorage;
 
-    storage.setItem('gamecloud_session', JSON.stringify(session));
+    storage.setItem(
+      'gamecloud_session',
+      JSON.stringify(session)
+    );
 
-    currentAdmin = result.role === 'admin';
+    currentAdmin =
+      serverRole === 'admin';
 
     if (currentAdmin) {
       showAdminApp();
       await loadAdminAgents();
     } else {
-      currentUser = result.user || null;
+      currentUser =
+        result.user || null;
       showUserApp();
     }
   } catch (error) {
