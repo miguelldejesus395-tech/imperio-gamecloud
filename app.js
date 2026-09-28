@@ -1,371 +1,1277 @@
 'use strict';
 
-const API_BASE = '/api/';
-const CART_KEY = 'igc_cart_v1';
-let token = localStorage.getItem('igc_token') || sessionStorage.getItem('igc_token') || '';
-let role = localStorage.getItem('igc_role') || sessionStorage.getItem('igc_role') || '';
-let currentUser = null;
-let catalog = [];
-let minutesRateCents = 10;
-let chosenPackage = null;
-let cart = readCart();
-let currentOrder = null;
-let adminData = null;
+const API_BASE =
+  'https://imperio-gamecloud-1.onrender.com/api/';
 
-const defaultSiteConfig = {
-  brandName: 'IMPÉRIO GAMECLOUD',
-  authTitle: 'Acesse sua conta',
-  authText: 'Entre para gerenciar seus servidores e seu tempo de jogo.',
-  home: { eyebrow: 'Império GameCloud • FiveM', title: 'Olá, {name}.', text: 'Seu próximo mundo começa aqui. Acompanhe o tempo, gerencie seus servidores e monte sua configuração.', primaryButton: 'Explorar pacotes', secondaryButton: 'Meus servidores', heroImage: 'imperio-usuario.png' },
-  theme: { gold: '#f2c94c', background: '#090c12' }
-};
-let siteConfig = JSON.parse(JSON.stringify(defaultSiteConfig));
+let token =
+  localStorage.getItem('igc_token') ||
+  sessionStorage.getItem('igc_token') ||
+  '';
 
-function mergeSiteConfig(value) {
-  const incoming = value && typeof value === 'object' ? value : {};
-  return { ...defaultSiteConfig, ...incoming, home: { ...defaultSiteConfig.home, ...(incoming.home || {}) }, theme: { ...defaultSiteConfig.theme, ...(incoming.theme || {}) } };
-}
-function applySiteConfig(value) {
-  siteConfig = mergeSiteConfig(value);
-  document.documentElement.style.setProperty('--gold', siteConfig.theme.gold);
-  document.documentElement.style.setProperty('--gold2', siteConfig.theme.gold);
-  document.documentElement.style.setProperty('--bg', siteConfig.theme.background);
-  document.querySelectorAll('.brand strong').forEach((node) => { node.textContent = siteConfig.brandName; });
-  if ($('loginTitle')) $('loginTitle').textContent = siteConfig.authTitle;
-  if ($('loginText')) $('loginText').textContent = siteConfig.authText;
-  if ($('homeEyebrow')) $('homeEyebrow').textContent = siteConfig.home.eyebrow;
-  if ($('homeText')) $('homeText').textContent = siteConfig.home.text;
-  if ($('homePrimaryButton')) $('homePrimaryButton').textContent = siteConfig.home.primaryButton;
-  if ($('homeSecondaryButton')) $('homeSecondaryButton').textContent = siteConfig.home.secondaryButton;
-  const hero = $('homeHero');
-  if (hero) hero.style.backgroundImage = `linear-gradient(90deg,#111720f5 0%,#111720db 48%,#11172035 100%),url(${JSON.stringify(siteConfig.home.heroImage)})`;
-}
-async function loadSiteConfig() { try { const result = await api('site-config'); applySiteConfig(result.config || result); } catch (error) { console.warn('Não foi possível carregar as configurações visuais:', error.message); } }
-function editorValue(id, fallback='') { return $(id)?.value ?? fallback; }
-function fillSiteEditor(value) {
-  const cfg = mergeSiteConfig(value);
-  const fields = { editorBrandName:cfg.brandName, editorAuthTitle:cfg.authTitle, editorAuthText:cfg.authText, editorHomeEyebrow:cfg.home.eyebrow, editorHomeTitle:cfg.home.title, editorHomeText:cfg.home.text, editorPrimaryButton:cfg.home.primaryButton, editorSecondaryButton:cfg.home.secondaryButton, editorGold:cfg.theme.gold, editorGoldText:cfg.theme.gold, editorBackground:cfg.theme.background, editorBackgroundText:cfg.theme.background, editorHeroImageValue:cfg.home.heroImage };
-  Object.entries(fields).forEach(([id,val]) => { if ($(id)) $(id).value = val; });
-  if ($('editorHeroImage')) { $('editorHeroImage').src = cfg.home.heroImage; $('editorHeroImage').style.display = cfg.home.heroImage ? 'block' : 'none'; }
-  updateEditorPreview();
-}
-function editorConfigFromForm() {
-  return mergeSiteConfig({ brandName:editorValue('editorBrandName'), authTitle:editorValue('editorAuthTitle'), authText:editorValue('editorAuthText'), home:{ eyebrow:editorValue('editorHomeEyebrow'), title:editorValue('editorHomeTitle'), text:editorValue('editorHomeText'), primaryButton:editorValue('editorPrimaryButton'), secondaryButton:editorValue('editorSecondaryButton'), heroImage:editorValue('editorHeroImageValue','imperio-usuario.png') }, theme:{ gold:editorValue('editorGold','#f2c94c'), background:editorValue('editorBackground','#090c12') } });
-}
-function updateEditorPreview() {
-  if (!$('editorPreviewHero')) return;
-  const cfg = editorConfigFromForm();
-  $('previewEyebrow').textContent = cfg.home.eyebrow; $('previewTitle').textContent = cfg.home.title.replace('{name}', currentUser?.name || 'jogador'); $('previewText').textContent = cfg.home.text; $('previewPrimary').textContent = cfg.home.primaryButton; $('previewSecondary').textContent = cfg.home.secondaryButton;
-  $('editorPreviewHero').style.backgroundImage = `linear-gradient(90deg,#111720f5 0%,#111720db 52%,#11172055 100%),url(${JSON.stringify(cfg.home.heroImage)})`;
-}
-function wireSiteEditor() {
-  const form=$('siteEditorForm'); if (!form || form.dataset.wired) return; form.dataset.wired='1';
-  form.addEventListener('input', (event) => { if (event.target.id === 'editorGold') $('editorGoldText').value=event.target.value; if (event.target.id === 'editorGoldText') $('editorGold').value=/^#[0-9a-fA-F]{6}$/.test(event.target.value)?event.target.value:'#f2c94c'; if (event.target.id === 'editorBackground') $('editorBackgroundText').value=event.target.value; if (event.target.id === 'editorBackgroundText') $('editorBackground').value=/^#[0-9a-fA-F]{6}$/.test(event.target.value)?event.target.value:'#090c12'; updateEditorPreview(); });
-  $('editorHeroUpload')?.addEventListener('change', () => { const file=$('editorHeroUpload').files?.[0]; if(!file) return; if(!file.type.startsWith('image/')) return setEditorStatus('Escolha uma imagem PNG, JPG ou WebP.',true); if(file.size>750*1024) return setEditorStatus('A imagem deve ter no máximo 750 KB.',true); const reader=new FileReader(); reader.onload=()=>{ $('editorHeroImageValue').value=String(reader.result); $('editorHeroImage').src=String(reader.result); $('editorHeroImage').style.display='block'; updateEditorPreview(); }; reader.readAsDataURL(file); });
-  form.addEventListener('submit', async (event)=>{ event.preventDefault(); try { const cfg=editorConfigFromForm(); const result=await api('admin/site-config','POST',cfg); applySiteConfig(result.config||cfg); fillSiteEditor(result.config||cfg); setEditorStatus('Alterações publicadas com sucesso.'); } catch(error){ setEditorStatus(error.message,true); } });
-  $('restoreSiteConfig')?.addEventListener('click',()=>{ fillSiteEditor(defaultSiteConfig); setEditorStatus('Padrão restaurado no editor. Clique em Publicar alterações para salvar.'); });
-}
-function setEditorStatus(message,error=false){ const n=$('editorStatus'); if(!n)return; n.textContent=message; n.className=`editor-status${error?' error':''}`; }
-async function loadSiteEditor(){ try { const result=await api('site-config'); fillSiteEditor(result.config||result); } catch(error){ setEditorStatus(error.message,true); } }
-const $ = (id) => document.getElementById(id);
-const money = (cents) => (Number(cents || 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-const fmtMinutes = (value) => `${Number(value || 0).toLocaleString('pt-BR')} min`;
+let role =
+  localStorage.getItem('igc_role') ||
+  sessionStorage.getItem('igc_role') ||
+  '';
 
-function readCart() {
-  try { return JSON.parse(localStorage.getItem(CART_KEY) || 'null') || { packageId: null, minutes: 0 }; }
-  catch { return { packageId: null, minutes: 0 }; }
+function el(id) {
+  return document.getElementById(id);
 }
-function saveCart() { localStorage.setItem(CART_KEY, JSON.stringify(cart)); }
-function say(text, error = false) {
-  const node = $('message'); if (!node) return;
-  node.textContent = text || ''; node.className = `message${error ? ' error' : ''}`;
-  if (text) window.setTimeout(() => { if (node.textContent === text) node.textContent = ''; }, 7000);
+
+function show(page) {
+  document.querySelectorAll('.page').forEach(function (section) {
+    section.classList.toggle(
+      'active',
+      section.id === page
+    );
+  });
 }
-function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); }
-async function api(route, method = 'GET', body) {
-  const headers = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const response = await fetch(API_BASE + route, { method, headers, credentials: 'same-origin', body: body === undefined ? undefined : JSON.stringify(body) });
+
+function message(text, isError) {
+  const node = el('message');
+
+  if (!node) {
+    return;
+  }
+
+  node.textContent = text || '';
+
+  node.className = isError
+    ? 'error'
+    : 'success';
+}
+
+function fail(error) {
+  message(
+    error && error.message
+      ? error.message
+      : 'Ocorreu um erro.',
+    true
+  );
+}
+
+async function api(path, method, data) {
+  const options = {
+    method: method || 'GET',
+    headers: {}
+  };
+
+  if (data !== undefined) {
+    options.headers['Content-Type'] =
+      'application/json';
+
+    options.body =
+      JSON.stringify(data);
+  }
+
+  if (token) {
+    options.headers.Authorization =
+      'Bearer ' + token;
+  }
+
+  const response =
+    await fetch(
+      API_BASE + path,
+      options
+    );
+
   let result = {};
-  try { result = await response.json(); } catch { /* resposta sem JSON */ }
-  if (!response.ok) throw new Error(result.error || result.message || `Erro ${response.status}`);
+
+  try {
+    result =
+      await response.json();
+  } catch (error) {
+    result = {};
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      result.error ||
+      result.message ||
+      'Erro ' + response.status
+    );
+  }
+
   return result;
 }
-function setSession(result, remember) {
-  token = result.token || ''; role = result.role || 'player'; clearStoredSession();
-  const store = remember ? localStorage : sessionStorage;
-  store.setItem('igc_token', token); store.setItem('igc_role', role);
-}
-function clearStoredSession() {
-  localStorage.removeItem('igc_token'); localStorage.removeItem('igc_role');
-  sessionStorage.removeItem('igc_token'); sessionStorage.removeItem('igc_role');
-}
-function show(page) {
-  document.querySelectorAll('.page').forEach((item) => item.classList.toggle('active', item.id === page));
-  if (page === 'user') showUserPage('home');
-}
-const pageTitles = { home: 'Visão geral', servers: 'Meus servidores', buy: 'Comprar servidor', cart: 'Carrinho', payment: 'Pagamento', fivem: 'FiveM', orders: 'Pedidos', profile: 'Perfil', settings: 'Configurações', support: 'Suporte' };
-function showUserPage(page) {
-  document.querySelectorAll('.page').forEach((item) => item.classList.toggle('active', item.id === 'user'));
-  document.querySelectorAll('.content-section').forEach((item) => item.classList.toggle('active', item.id === page));
-  document.querySelectorAll('.nav-item[data-page]').forEach((item) => item.classList.toggle('active', item.dataset.page === page));
-  if ($('topTitle')) $('topTitle').textContent = pageTitles[page] || 'GameCloud';
-  if (page === 'cart') renderCart();
-  if (page === 'orders') loadOrders().catch((error) => say(error.message, true));
-  if (page === 'fivem') loadStream().catch((error) => say(error.message, true));
-  if (page === 'support') loadSupport().catch((error) => say(error.message, true));
-}
-function serverCard(server) {
-  const status = String(server.status || 'offline');
-  const isOnline = status === 'online';
-  return `<article class="server-card"><div class="server-card-top"><div><span class="eyebrow">${escapeHtml(server.type || 'Servidor')}</span><h3>${escapeHtml(server.name)}</h3><p>${escapeHtml(server.userName || 'Sua instância GameCloud')}</p></div><span class="status"><i class="dot ${isOnline ? 'online' : ''}"></i>${escapeHtml(status)}</span></div><div class="specs"><div class="spec"><small>RAM</small><strong>${Number(server.ram)} GB</strong></div><div class="spec"><small>vCPU</small><strong>${Number(server.vcpu)} cores</strong></div><div class="spec"><small>GPU</small><strong>${escapeHtml(server.gpu)}</strong></div><div class="spec"><small>Armazenamento</small><strong>${Number(server.storage)} GB</strong></div></div><div class="card-actions"><button class="btn primary small" data-fivem-start="${escapeHtml(server.id)}">Abrir FiveM</button><span class="muted small">${isOnline ? 'Estado reportado pelo agente' : 'Aguardando infraestrutura'}</span></div></article>`;
-}
-async function loadUser() {
-  const result = await api('me'); currentUser = result.user || result;
-  const name = currentUser.name || currentUser.username || 'Jogador';
-  if ($('sideName')) $('sideName').textContent = name;
-  if ($('topUser')) $('topUser').textContent = name;
-  if ($('greetingName')) $('greetingName').textContent = name;
-  if ($('minutes')) $('minutes').textContent = fmtMinutes(currentUser.minutes);
-  if ($('profileName')) $('profileName').value = name;
-  if ($('profileEmail')) $('profileEmail').value = currentUser.email || '';
-  if ($('profileUsername')) $('profileUsername').value = currentUser.username || '';
-  await Promise.all([loadCatalog(), loadServers(), loadOrders(), loadStream()]);
-  show('user'); showUserPage('home');
-}
-async function loadCatalog() {
-  const result = await api('packages'); catalog = Array.isArray(result.packages) ? result.packages : [];
-  minutesRateCents = Number(result.minutesRateCents ?? 0); renderCatalog(); renderSelection(); renderCart();
-}
-function renderCatalog() {
-  const root = $('packageGrid'); if (!root) return;
-  root.innerHTML = catalog.map((item) => `<article class="package-card ${chosenPackage === item.id ? 'selected' : ''}"><span class="eyebrow">Pacote GameCloud</span><h3>${escapeHtml(item.name)}</h3><p class="muted">${escapeHtml(item.description || 'Recursos dedicados para seu servidor.')}</p><div class="package-price">${money(item.priceCents)}</div><div class="package-specs"><span>RAM <b>${Number(item.ram)} GB</b></span><span>vCPU <b>${Number(item.vcpu)}</b></span><span>GPU <b>${escapeHtml(item.gpu)}</b></span><span>Armazenamento <b>${Number(item.storage)} GB</b></span></div><button class="btn ${chosenPackage === item.id ? 'primary' : ''} full" data-select-package="${escapeHtml(item.id)}">${chosenPackage === item.id ? 'Selecionado' : 'Selecionar pacote'}</button></article>`).join('');
-  if ($('minutesRateLabel')) $('minutesRateLabel').textContent = `Tarifa atual: ${money(minutesRateCents)} por minuto. O administrador pode alterá-la no catálogo.`;
-}
-function selectionCents() {
-  const selected = catalog.find((item) => item.id === chosenPackage);
-  const minutes = Number($('minuteChoice')?.value || 0);
-  return (selected?.priceCents || 0) + minutes * minutesRateCents;
-}
-function renderSelection() {
-  const root = $('selectionSummary'); if (!root) return;
-  const selected = catalog.find((item) => item.id === chosenPackage);
-  const minutes = Number($('minuteChoice')?.value || 0);
-  root.innerHTML = `<div class="summary-line"><span>Pacote</span><b>${selected ? escapeHtml(selected.name) : 'Não selecionado'}</b></div><div class="summary-line"><span>Tempo adicional</span><b>${fmtMinutes(minutes)}</b></div><div class="summary-line"><span>Subtotal do pacote</span><b>${money(selected?.priceCents || 0)}</b></div><div class="summary-line"><span>Subtotal do tempo</span><b>${money(minutes * minutesRateCents)}</b></div><div class="summary-line total"><span>Total</span><b>${money(selectionCents())}</b></div>`;
-}
-async function loadServers() {
-  const result = await api('servers'); const list = Array.isArray(result.servers) ? result.servers : [];
-  const markup = list.length ? list.map(serverCard).join('') : '<div class="panel muted">Você ainda não possui servidores. Escolha um pacote para começar.</div>';
-  if ($('serversList')) $('serversList').innerHTML = markup;
-  if ($('homeServers')) $('homeServers').innerHTML = list.length ? list.slice(0, 2).map(serverCard).join('') : '<div class="muted">Nenhum servidor vinculado ainda.</div>';
-  if ($('fivemServers')) $('fivemServers').innerHTML = list.length ? list.map(serverCard).join('') : '<div class="panel muted">Nenhuma instância com FiveM vinculada.</div>';
-  if ($('serverCount')) $('serverCount').textContent = String(list.length);
-}
-function cartTotals() {
-  const item = catalog.find((entry) => entry.id === cart.packageId);
-  const packageCents = item?.priceCents || 0;
-  const minutesCents = Math.max(0, Number(cart.minutes) || 0) * minutesRateCents;
-  return { item, packageCents, minutesCents, total: packageCents + minutesCents };
-}
-function renderCart() {
-  const root = $('cartContent'); if (!root) return;
-  const { item, packageCents, minutesCents, total } = cartTotals();
-  const hasCart = Boolean(item || Number(cart.minutes) > 0);
-  root.innerHTML = hasCart ? `<div class="panel-head"><div><h2>Itens da compra</h2><p>Um único pedido para o pacote e o tempo.</p></div><button id="clearCart" class="btn danger small">Remover</button></div>${item ? `<div class="summary-line"><span>Pacote ${escapeHtml(item.name)} • ${item.ram} GB RAM, ${item.vcpu} vCPU, ${escapeHtml(item.gpu)}</span><b>${money(packageCents)}</b></div>` : ''}${Number(cart.minutes) > 0 ? `<div class="summary-line"><span>${fmtMinutes(cart.minutes)}</span><b>${money(minutesCents)}</b></div>` : ''}` : '<div class="empty">Seu carrinho está vazio. Escolha um pacote e/ou minutos.</div>';
-  if ($('cartSummary')) $('cartSummary').innerHTML = `<div class="summary-line"><span>Pacote</span><b>${money(packageCents)}</b></div><div class="summary-line"><span>Tempo</span><b>${money(minutesCents)}</b></div><div class="summary-line total"><span>Total</span><b>${money(total)}</b></div>`;
-  if ($('continueCheckout')) $('continueCheckout').disabled = !hasCart;
-  $('clearCart')?.addEventListener('click', () => { cart = { packageId: null, minutes: 0 }; saveCart(); renderCart(); });
-}
-async function loadOrders() {
-  const result = await api('orders'); const items = Array.isArray(result.orders) ? result.orders : [];
-  if ($('pendingCount')) $('pendingCount').textContent = String(items.filter((item) => item.status === 'PENDENTE').length);
-  if ($('ordersList')) $('ordersList').innerHTML = items.length ? items.map((item) => `<article class="order-card"><div><span class="status">${escapeHtml(item.status)}</span><h3>${escapeHtml(item.packageName || 'Tempo de jogo')}</h3><p class="muted">${fmtMinutes(item.minutes)} • ${new Date(item.createdAt).toLocaleString('pt-BR')}</p><p class="muted small">${escapeHtml(item.paymentMessage || '')}</p></div><strong>${money(item.totalCents)}</strong></article>`).join('') : '<div class="panel muted">Nenhum pedido registrado.</div>';
-}
-async function loadStream() {
-  const result = await api('stream/status'); const stream = result.streaming || result;
-  const label = ({ online: 'Online', starting: 'Iniciando', stopping: 'Encerrando', error: 'Erro', offline: 'Offline' })[stream.status] || 'Desconhecido';
-  if ($('playerMiniStatus')) $('playerMiniStatus').textContent = label;
-  if ($('streamStatus')) $('streamStatus').innerHTML = `<i class="dot ${stream.status === 'online' ? 'online' : ''}"></i>${escapeHtml(label)}`;
-  if ($('streamMessage')) $('streamMessage').textContent = stream.message || 'Sem mensagem do agente.';
-  if ($('adminStreamStatus')) $('adminStreamStatus').textContent = label;
-  if ($('adminStreamMessage')) $('adminStreamMessage').textContent = stream.message || '—';
-  if ($('adminStreamHeartbeat')) $('adminStreamHeartbeat').textContent = stream.lastHeartbeat ? new Date(stream.lastHeartbeat).toLocaleString('pt-BR') : 'Sem heartbeat';
-  if ($('adminStreamShort')) $('adminStreamShort').textContent = label;
-  const toggle = $('toggleStream'); if (toggle) toggle.textContent = stream.enabled ? 'Desativar streaming' : 'Ativar streaming';
-}
-function renderPayment(order) {
-  currentOrder = order;
-  const root = $('paymentPanel'); if (!root) return;
-  root.innerHTML = `<div class="panel-head"><div><span class="eyebrow">Pedido ${escapeHtml(order.id.slice(0, 8))}</span><h2>Compra registrada</h2></div><span class="status">${escapeHtml(order.status)}</span></div><div class="summary-line"><span>Pacote</span><b>${escapeHtml(order.packageName || 'Não selecionado')}</b></div><div class="summary-line"><span>Tempo</span><b>${fmtMinutes(order.minutes)}</b></div><div class="summary-line total"><span>Total do pedido</span><b>${money(order.totalCents)}</b></div><div class="notice" style="margin-top:14px">${escapeHtml(order.paymentMessage)} Não informe dados de cartão nesta tela.</div><button class="btn ghost" data-page="orders" style="margin-top:14px">Ver histórico de pedidos</button>`;
-}
-function adminSection(page) {
-  document.querySelectorAll('.admin-section').forEach((item) => item.classList.toggle('active', item.id === `admin-${page}`));
-  document.querySelectorAll('.admin-tab').forEach((item) => item.classList.toggle('active', item.dataset.adminPage === page));
-  if (page === 'servers') loadAdmin().catch((error) => say(error.message, true));
-  if (page === 'orders') loadAdmin().catch((error) => say(error.message, true));
-  if (page === 'catalog') loadAdmin().catch((error) => say(error.message, true));
-  if (page === 'editor') { wireSiteEditor(); loadSiteEditor().catch((error) => say(error.message, true)); }
-}
-function renderAdmin(data) {
-  adminData = data;
-  const users = data.users || [], servers = data.servers || [], orders = data.orders || [];
-  if ($('adminUserCount')) $('adminUserCount').textContent = String(users.length);
-  if ($('adminServerCount')) $('adminServerCount').textContent = String(servers.length);
-  if ($('adminPendingCount')) $('adminPendingCount').textContent = String(orders.filter((item) => item.status === 'PENDENTE').length);
-  if ($('adminUsers')) $('adminUsers').innerHTML = users.map((user) => `<tr><td>${escapeHtml(user.name)}</td><td>${escapeHtml(user.username)}</td><td>${escapeHtml(user.email)}</td><td>${fmtMinutes(user.minutes)}</td></tr>`).join('') || '<tr><td colspan="4">Nenhum usuário.</td></tr>';
-  if ($('serverUser')) $('serverUser').innerHTML = '<option value="">Sem vínculo</option>' + users.map((user) => `<option value="${Number(user.id)}">${escapeHtml(user.name)} • ${escapeHtml(user.email)}</option>`).join('');
-  if ($('adminServers')) $('adminServers').innerHTML = servers.length ? servers.map((item) => `<article class="admin-server-row"><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.type)} • ${escapeHtml(item.userName || 'Sem vínculo')}</small></div><div><span class="status">${escapeHtml(item.status)}</span><small>${Number(item.ram)} GB RAM • ${Number(item.vcpu)} vCPU • ${escapeHtml(item.gpu)} • ${Number(item.storage)} GB</small></div><div class="card-actions"><button class="btn small" data-edit-server="${escapeHtml(item.id)}">Editar</button><button class="btn danger small" data-delete-server="${escapeHtml(item.id)}">Excluir</button><button class="btn small" data-server-action="start" data-server-id="${escapeHtml(item.id)}">Iniciar</button><button class="btn small" data-server-action="stop" data-server-id="${escapeHtml(item.id)}">Parar</button></div></article>`).join('') : '<div class="muted">Nenhum servidor cadastrado.</div>';
-  if ($('adminOrders')) $('adminOrders').innerHTML = orders.length ? orders.map((item) => `<article class="order-card"><div><span class="status">${escapeHtml(item.status)}</span><h3>${escapeHtml(item.userName)} • ${escapeHtml(item.packageName || 'Tempo')}</h3><p class="muted">${fmtMinutes(item.minutes)} • ${new Date(item.createdAt).toLocaleString('pt-BR')}</p><p class="muted small">${escapeHtml(item.paymentMessage)}</p></div><div><strong>${money(item.totalCents)}</strong>${item.status === 'PENDENTE' ? `<button class="btn primary small" data-approve-order="${escapeHtml(item.id)}">Aprovar manualmente</button>` : ''}</div></article>`).join('') : '<div class="panel muted">Nenhum pedido.</div>';
-  if ($('adminCatalog')) $('adminCatalog').innerHTML = (data.packages || []).map((item) => `<form class="panel admin-package-form" data-package-id="${escapeHtml(item.id)}"><div class="panel-head"><div><h2>${escapeHtml(item.name)}</h2><p>${Number(item.ram)} GB RAM • ${Number(item.vcpu)} vCPU • ${escapeHtml(item.gpu)}</p></div></div><div class="field"><label>Preço (R$)</label><input name="price" type="number" min="0" step="0.01" value="${(Number(item.priceCents) / 100).toFixed(2)}" required></div><button class="btn primary" style="margin-top:12px">Salvar preço</button></form>`).join('');
-  if ($('minutesRate')) $('minutesRate').value = (Number(data.minutesRateCents || 0) / 100).toFixed(2);
-  const tickets = data.tickets || [];
-  if ($('adminTickets')) $('adminTickets').innerHTML = tickets.length ? tickets.map((item) => `<article class="order-card"><div><span class="status">${escapeHtml(item.status)}</span><h3>${escapeHtml(item.subject)}</h3><p>${escapeHtml(item.userName)} • ${escapeHtml(item.email)}</p><p class="muted">${escapeHtml(item.message)}</p></div><small>${new Date(item.createdAt).toLocaleString('pt-BR')}</small></article>`).join('') : '<div class="muted">Nenhum chamado.</div>';
-}
-async function loadAdmin() { const result = await api('admin/overview'); renderAdmin(result); await loadStream(); }
-function clearServerForm() { $('serverForm')?.reset(); if ($('serverId')) $('serverId').value = ''; if ($('serverFormTitle')) $('serverFormTitle').textContent = 'Criar servidor'; }
-async function logout() {
-  try { await api('logout', 'POST', {}); } catch { /* sessão pode já ter expirado */ }
-  token = ''; role = ''; currentUser = null; clearStoredSession(); show('login'); say('Você saiu da sua conta.');
+
+function saveSession(result, remember) {
+  token =
+    result.token || '';
+
+  role =
+    result.user
+      ? result.user.role || ''
+      : result.role || '';
+
+  localStorage.removeItem(
+    'igc_token'
+  );
+
+  localStorage.removeItem(
+    'igc_role'
+  );
+
+  sessionStorage.removeItem(
+    'igc_token'
+  );
+
+  sessionStorage.removeItem(
+    'igc_role'
+  );
+
+  const storage =
+    remember
+      ? localStorage
+      : sessionStorage;
+
+  if (token) {
+    storage.setItem(
+      'igc_token',
+      token
+    );
+  }
+
+  if (role) {
+    storage.setItem(
+      'igc_role',
+      role
+    );
+  }
 }
 
-function wireForms() {
-  $('loginForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    try { const result = await api('login', 'POST', { email: $('email').value.trim(), password: $('password').value }); setSession(result, $('remember').checked); await loadUser(); say('Login realizado.'); }
-    catch (error) { say(error.message, true); }
-  });
-  $('registerForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    try { const result = await api('users/register', 'POST', { name: $('rname').value.trim(), email: $('remail').value.trim(), password: $('rpassword').value }); show('login'); $('email').value = $('remail').value; say(result.message || 'Conta criada.'); }
-    catch (error) { say(error.message, true); }
-  });
-  $('forgotForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    try { const result = await api('forgot-password', 'POST', { email: $('femail').value.trim() }); say(`${result.message} Se não houver e-mail configurado, o administrador deve consultar o log privado do servidor.`); }
-    catch (error) { say(error.message, true); }
-  });
-  $('resetForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    try { const params = new URLSearchParams(location.search); const result = await api('reset-password', 'POST', { token: params.get('token') || params.get('reset') || '', password: $('newpassword').value }); show('login'); say(result.message || 'Senha atualizada.'); }
-    catch (error) { say(error.message, true); }
-  });
-  $('adminLoginForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    try { const result = await api('admin/login', 'POST', { username: $('adminUsername').value.trim(), password: $('adminPassword').value }); setSession(result, $('adminRemember').checked); show('admin'); adminSection('overview'); await loadAdmin(); say('Sessão administrativa iniciada.'); }
-    catch (error) { say(error.message, true); }
-  });
-  $('profileForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    try { const result = await api('me/profile', 'POST', { name: $('profileName').value.trim() }); currentUser = result.user; await loadUser(); showUserPage('profile'); say('Perfil atualizado.'); }
-    catch (error) { say(error.message, true); }
-  });
-  $('supportForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    try { await api('support', 'POST', { subject: $('supportSubject').value.trim(), message: $('supportMessage').value.trim() }); $('supportForm').reset(); await loadSupport(); say('Solicitação enviada para a equipe.'); }
-    catch (error) { say(error.message, true); }
-  });
-  $('serverForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const id = $('serverId').value;
-    const body = { id: id || undefined, name: $('serverName').value.trim(), type: $('serverType').value, userId: $('serverUser').value, ram: Number($('serverRam').value), vcpu: Number($('serverVcpu').value), gpu: $('serverGpu').value.trim(), storage: Number($('serverStorage').value), status: $('serverStatusInput').value };
-    try { await api('admin/servers', 'POST', body); clearServerForm(); await loadAdmin(); say('Servidor salvo. Nenhuma máquina física foi provisionada.'); }
-    catch (error) { say(error.message, true); }
-  });
-  $('minutePriceForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    try { await api('admin/minutes-price', 'POST', { priceCents: Math.round(Number($('minutesRate').value) * 100) }); await loadAdmin(); say('Preço por minuto atualizado.'); }
-    catch (error) { say(error.message, true); }
-  });
-  $('timeForm')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    try { await api('admin/time/add', 'POST', { email: $('playerEmail').value.trim(), minutes: Number($('addMinutes').value) }); $('timeForm').reset(); await loadAdmin(); say('Minutos adicionados.'); }
-    catch (error) { say(error.message, true); }
-  });
+function clearSession() {
+  token = '';
+  role = '';
+
+  localStorage.removeItem(
+    'igc_token'
+  );
+
+  localStorage.removeItem(
+    'igc_role'
+  );
+
+  sessionStorage.removeItem(
+    'igc_token'
+  );
+
+  sessionStorage.removeItem(
+    'igc_role'
+  );
 }
-async function loadSupport() {
-  const result = await api('support'); const items = result.tickets || [];
-  if ($('supportHistory')) $('supportHistory').innerHTML = items.length ? `<h3>Solicitações anteriores</h3>${items.map((item) => `<article class="order-card"><div><span class="status">${escapeHtml(item.status)}</span><h3>${escapeHtml(item.subject)}</h3><p class="muted">${escapeHtml(item.message)}</p></div><small>${new Date(item.createdAt).toLocaleString('pt-BR')}</small></article>`).join('')}` : '';
+
+function setText(id, value) {
+  const node = el(id);
+
+  if (!node) {
+    return;
+  }
+
+  node.textContent =
+    value === null ||
+    value === undefined
+      ? ''
+      : String(value);
 }
-function wireActions() {
-  document.addEventListener('click', async (event) => {
-    const pageButton = event.target.closest('[data-page]');
-    if (pageButton) {
-      const targetPage = pageButton.dataset.page;
-      if (['login', 'register', 'forgot', 'reset', 'adminLogin', 'admin'].includes(targetPage)) show(targetPage);
-      else showUserPage(targetPage);
-      return;
+
+function formatMinutes(value) {
+  const minutes =
+    Number(value);
+
+  const safe =
+    Number.isFinite(minutes)
+      ? minutes
+      : 0;
+
+  return safe +
+    (
+      safe === 1
+        ? ' minuto'
+        : ' minutos'
+    );
+}
+
+function streamStatusText(status) {
+  switch (status) {
+    case 'starting':
+      return '🟡 Iniciando FiveM...';
+
+    case 'stopping':
+      return '🟠 Encerrando FiveM...';
+
+    case 'online':
+      return '🟢 FiveM online';
+
+    case 'error':
+      return '🔴 Erro no GameCloud';
+
+    case 'offline':
+      return '⚫ FiveM offline';
+
+    default:
+      return status
+        ? String(status)
+        : '⚫ Offline';
+  }
+}
+
+function setButtonBusy(
+  button,
+  busy,
+  text
+) {
+  if (!button) {
+    return;
+  }
+
+  if (busy) {
+    button.disabled = true;
+
+    button.dataset.originalText =
+      button.textContent;
+
+    button.textContent = text;
+  } else {
+    button.disabled = false;
+
+    if (
+      button.dataset.originalText
+    ) {
+      button.textContent =
+        button.dataset.originalText;
+
+      delete button.dataset.originalText;
     }
-    const button = event.target.closest('button'); if (!button) return;
-    try {
-      if (button.id === 'showRegister') { show('register'); return; }
-      if (button.id === 'showForgot') { show('forgot'); return; }
-      if (button.id === 'showAdmin') { show('adminLogin'); return; }
-      if (['backToLogin', 'backLoginFromRegister', 'backLoginFromForgot', 'backLoginFromReset'].includes(button.id)) { show('login'); return; }
-      if (button.id === 'logoutUser' || button.id === 'logoutAdmin') { await logout(); return; }
-      if (button.dataset.selectPackage) { chosenPackage = button.dataset.selectPackage; renderCatalog(); renderSelection(); return; }
-      if (button.id === 'addToCart') {
-        const minutes = Number($('minuteChoice').value || 0);
-        if (!chosenPackage && minutes <= 0) throw new Error('Selecione um pacote ou adicione minutos.');
-        cart = { packageId: chosenPackage, minutes }; saveCart(); renderCart(); showUserPage('cart'); say('Itens adicionados ao carrinho.'); return;
-      }
-      if (button.id === 'continueCheckout') {
-        const { item, total } = cartTotals();
-        if (!item && !cart.minutes) throw new Error('Seu carrinho está vazio.');
-        const result = await api('orders', 'POST', { packageId: item?.id || null, minutes: Number(cart.minutes || 0) });
-        cart = { packageId: null, minutes: 0 }; saveCart(); renderPayment(result.order); await loadOrders(); showUserPage('payment'); return;
-      }
-      if (button.id === 'refreshAdmin') { await loadAdmin(); say('Dados atualizados.'); return; }
-      if (button.id === 'refreshStream' || button.id === 'refreshAdminStream') { await loadStream(); say('Status atualizado.'); return; }
-      if (button.id === 'saveSettings') {
-        clearStoredSession(); const store = $('rememberSetting').checked ? localStorage : sessionStorage;
-        store.setItem('igc_token', token); store.setItem('igc_role', role); say('Preferência salva.'); return;
-      }
-      if (button.dataset.adminPage) { adminSection(button.dataset.adminPage); return; }
-      if (button.dataset.editServer) {
-        const item = adminData?.servers?.find((server) => server.id === button.dataset.editServer); if (!item) return;
-        $('serverId').value = item.id; $('serverName').value = item.name; $('serverType').value = item.type; $('serverUser').value = item.userId ?? ''; $('serverRam').value = item.ram; $('serverVcpu').value = item.vcpu; $('serverGpu').value = item.gpu; $('serverStorage').value = item.storage; $('serverStatusInput').value = item.status; $('serverFormTitle').textContent = 'Editar servidor'; $('serverName').focus(); return;
-      }
-      if (button.id === 'cancelServerEdit') { clearServerForm(); return; }
-      if (button.dataset.deleteServer) {
-        if (!window.confirm('Excluir este registro de servidor?')) return;
-        await api(`admin/servers/${encodeURIComponent(button.dataset.deleteServer)}/delete`, 'POST', {}); await loadAdmin(); say('Servidor excluído.'); return;
-      }
-      if (button.dataset.serverAction) {
-        await api(`admin/servers/${encodeURIComponent(button.dataset.serverId)}/${button.dataset.serverAction}`, 'POST', {}); return;
-      }
-      if (button.dataset.approveOrder) {
-        await api(`admin/orders/${encodeURIComponent(button.dataset.approveOrder)}/approve`, 'POST', {}); await loadAdmin(); say('Pedido aprovado; minutos creditados e servidor cadastrado como offline.'); return;
-      }
-      if (button.id === 'startStream' || button.id === 'stopStream') {
-        const action = button.id === 'startStream' ? 'start' : 'stop'; const result = await api(`admin/stream/${action}`, 'POST', {}); await loadStream(); say(result.message); return;
-      }
-      if (button.id === 'toggleStream') {
-        const result = await api('stream/status'); const stream = result.streaming || result;
-        await api('admin/stream/toggle', 'POST', { enabled: !stream.enabled }); await loadStream(); say('Configuração atualizada.'); return;
-      }
-      if (button.dataset.fivemStart !== undefined) {
-        const result = await api('stream/start', 'POST', {}); await loadStream(); say(result.message); return;
-      }
-    } catch (error) { say(error.message, true); }
-  });
-  document.addEventListener('submit', async (event) => {
-    const form = event.target.closest('.admin-package-form'); if (!form) return;
-    event.preventDefault();
-    try { await api('admin/packages', 'POST', { id: form.dataset.packageId, priceCents: Math.round(Number(form.elements.price.value) * 100) }); await loadCatalog(); await loadAdmin(); say('Preço do pacote atualizado.'); }
-    catch (error) { say(error.message, true); }
-  });
-  $('minuteChoice')?.addEventListener('change', renderSelection);
+  }
 }
-async function restoreSession() {
-  if (!token) { show('login'); return; }
+
+async function loadStreamStatus() {
+
   try {
-    if (role === 'admin') { show('admin'); adminSection('overview'); await loadAdmin(); }
-    else { role = 'player'; await loadUser(); }
-  } catch { clearStoredSession(); token = ''; role = ''; show('login'); }
+
+    const result =
+      await api('stream/status');
+
+    const streaming =
+      result.streaming ||
+      result;
+
+    setText(
+      'streamStatus',
+      streamStatusText(
+        streaming.status
+      )
+    );
+
+    setText(
+      'streamGame',
+      'Jogo: ' +
+        (
+          streaming.game ||
+          'FiveM'
+        )
+    );
+
+    setText(
+      'streamHost',
+      'Computador: ' +
+        (
+          streaming.host ||
+          '—'
+        )
+    );
+
+    setText(
+      'streamMessage',
+      streaming.message ||
+        '—'
+    );
+
+    setText(
+      'streamHeartbeat',
+      streaming.lastHeartbeat
+        ? 'Último contato: ' +
+          new Date(
+            streaming.lastHeartbeat
+          ).toLocaleString(
+            'pt-BR'
+          )
+        : 'Último contato: —'
+    );
+
+    const toggle =
+      el('toggleStream');
+
+    if (toggle) {
+
+      toggle.textContent =
+        streaming.enabled
+          ? '🔄 Desativar streaming'
+          : '🔄 Ativar streaming';
+    }
+
+  } catch (error) {
+
+    console.error(
+      '[GameCloud] Erro ao atualizar status:',
+      error
+    );
+
+    fail(error);
+  }
 }
-document.addEventListener('DOMContentLoaded', () => {
-  wireForms(); wireActions(); loadSiteConfig();
-  $('rememberSetting').checked = Boolean(localStorage.getItem('igc_token'));
-  restoreSession().catch((error) => { console.error('Falha ao restaurar sessão GameCloud:', error); show('login'); });
-});
+
+async function loadPlayerStreamStatus() {
+
+  const result =
+    await api('stream/status');
+
+  const streaming =
+    result.streaming ||
+    result;
+
+  setText(
+    'playerStreamStatus',
+    streamStatusText(
+      streaming.status
+    )
+  );
+
+  setText(
+    'playerStreamMessage',
+    streaming.message ||
+      'Aguardando o computador GameCloud.'
+  );
+}
+
+/*
+ * CORRIGIDO:
+ * O servidor retorna "users", não "players".
+ */
+async function loadAdmin() {
+  const result =
+    await api(
+      'admin/overview'
+    );
+
+  const users =
+    Array.isArray(result.users)
+      ? result.users
+      : [];
+
+  /*
+   * O servidor retorna a lista de usuários.
+   * Portanto, o total correto é users.length.
+   */
+  setText(
+    'users',
+    users.length
+  );
+
+  /*
+   * O backend atual não envia "online"
+   * dentro de cada usuário.
+   *
+   * Para não mostrar informação falsa,
+   * usamos 0 até o backend passar esse dado.
+   */
+  let onlineCount = 0;
+
+  users.forEach(
+    function (player) {
+      if (player.online === true) {
+        onlineCount++;
+      }
+    }
+  );
+
+  setText(
+    'online',
+    onlineCount
+  );
+
+  const tbody =
+    el('players');
+
+  if (!tbody) {
+    return;
+  }
+
+  tbody.innerHTML = '';
+
+  users.forEach(
+    function (player) {
+      const row =
+        document.createElement(
+          'tr'
+        );
+
+      const name =
+        document.createElement(
+          'td'
+        );
+
+      const email =
+        document.createElement(
+          'td'
+        );
+
+      const minutes =
+        document.createElement(
+          'td'
+        );
+
+      const status =
+        document.createElement(
+          'td'
+        );
+
+      name.textContent =
+        player.name ||
+        'Jogador';
+
+      email.textContent =
+        player.email ||
+        '—';
+
+      minutes.textContent =
+        formatMinutes(
+          player.minutes
+        );
+
+      /*
+       * O backend atual não envia online.
+       * Por isso o jogador aparece como offline
+       * até essa informação ser adicionada ao backend.
+       */
+      status.textContent =
+        player.online === true
+          ? '🟢 Online'
+          : '⚫ Offline';
+
+      status.className =
+        player.online === true
+          ? 'online'
+          : 'offline';
+
+      row.appendChild(
+        name
+      );
+
+      row.appendChild(
+        email
+      );
+
+      row.appendChild(
+        minutes
+      );
+
+      row.appendChild(
+        status
+      );
+
+      tbody.appendChild(
+        row
+      );
+    }
+  );
+}
+
+async function loadUser() {
+  /*
+   * Sessão administrativa não usa /api/me, pois o backend
+   * mantém o administrador separado dos jogadores.
+   */
+  if (role === 'admin') {
+    show('admin');
+
+    await loadAdmin();
+
+    await loadStreamStatus();
+
+    return;
+  }
+
+  const result =
+    await api('me');
+
+  const user =
+    result.user ||
+    result;
+
+  role =
+    user.role ||
+    result.role ||
+    '';
+
+  const storage =
+    localStorage.getItem(
+      'igc_token'
+    )
+      ? localStorage
+      : sessionStorage;
+
+  if (role) {
+    storage.setItem(
+      'igc_role',
+      role
+    );
+  }
+
+  setText(
+    'greeting',
+    'Bem-vindo, ' +
+      (
+        user.name ||
+        user.username ||
+        'Jogador'
+      ) +
+      '!'
+  );
+
+  setText(
+    'minutes',
+    formatMinutes(
+      user.minutes
+    )
+  );
+
+  if (role === 'admin') {
+    show('admin');
+
+    await loadAdmin();
+
+    await loadStreamStatus();
+  } else {
+    show('home');
+
+    await loadPlayerStreamStatus();
+  }
+}
+
+async function logout() {
+  try {
+    if (token) {
+      await api(
+        'logout',
+        'POST'
+      );
+    }
+  } catch (error) {
+  }
+
+  clearSession();
+
+  show('login');
+
+  message(
+    'Sessão encerrada.'
+  );
+}
+
+async function startPlayerStream() {
+  const button =
+    el('playerStart');
+
+  try {
+    setButtonBusy(
+      button,
+      true,
+      '🟡 Iniciando...'
+    );
+
+    const result =
+      await api(
+        'stream/start',
+        'POST'
+      );
+
+    /*
+     * O backend atual não retorna minutes
+     * nessa rota. O valor será atualizado
+     * quando o usuário recarregar os dados.
+     */
+
+    await loadPlayerStreamStatus();
+
+    message(
+      result.message ||
+        'FiveM solicitado com sucesso.'
+    );
+  } catch (error) {
+    fail(error);
+  } finally {
+    setButtonBusy(
+      button,
+      false
+    );
+  }
+}
+
+async function startAdminStream() {
+  const button =
+    el('startStream');
+
+  try {
+    setButtonBusy(
+      button,
+      true,
+      '🟡 Iniciando...'
+    );
+
+    const result =
+      await api(
+        'admin/stream/start',
+        'POST'
+      );
+
+    await loadStreamStatus();
+
+    message(
+      result.message ||
+        'Início do FiveM solicitado.'
+    );
+  } catch (error) {
+    fail(error);
+  } finally {
+    setButtonBusy(
+      button,
+      false
+    );
+  }
+}
+
+async function stopAdminStream() {
+  const button =
+    el('stopStream');
+
+  try {
+    setButtonBusy(
+      button,
+      true,
+      '🟠 Encerrando...'
+    );
+
+    const result =
+      await api(
+        'admin/stream/stop',
+        'POST'
+      );
+
+    await loadStreamStatus();
+
+    message(
+      result.message ||
+        'Encerramento do FiveM solicitado.'
+    );
+  } catch (error) {
+    fail(error);
+  } finally {
+    setButtonBusy(
+      button,
+      false
+    );
+  }
+}
+
+async function toggleAdminStream() {
+  const button =
+    el('toggleStream');
+
+  try {
+    setButtonBusy(
+      button,
+      true,
+      '🔄 Alterando...'
+    );
+
+    const status =
+      await api(
+        'stream/status'
+      );
+
+    const result =
+      await api(
+        'admin/stream/toggle',
+        'POST',
+        {
+          enabled:
+            !status.enabled
+        }
+      );
+
+    await loadStreamStatus();
+
+    message(
+      result.message ||
+        'Configuração do streaming atualizada.'
+    );
+  } catch (error) {
+    fail(error);
+  } finally {
+    setButtonBusy(
+      button,
+      false
+    );
+  }
+}
+
+function setupNavigation() {
+  document
+    .querySelectorAll(
+      '[data-page]'
+    )
+    .forEach(
+      function (button) {
+        button.addEventListener(
+          'click',
+          function () {
+            const page =
+              button.getAttribute(
+                'data-page'
+              );
+
+            if (page) {
+              show(page);
+
+              message('');
+            }
+          }
+        );
+      }
+    );
+}
+
+function setupLogin() {
+  const form =
+    el('loginForm');
+
+  if (!form) {
+    return;
+  }
+
+  form.addEventListener(
+    'submit',
+    async function (event) {
+      event.preventDefault();
+
+      const email =
+        el('email')
+          .value
+          .trim();
+
+      const password =
+        el('password')
+          .value;
+
+      const remember =
+        el('remember')
+          ? el('remember').checked
+          : false;
+
+      try {
+        if (
+          !email ||
+          !password
+        ) {
+          throw new Error(
+            'Informe o e-mail e a senha.'
+          );
+        }
+
+        /*
+         * O mesmo formulário aceita os dois acessos:
+         * - administrador: usa ADMIN_USER / ADMIN_PASSWORD do Render
+         * - jogador: usa a conta cadastrada normalmente
+         *
+         * A senha do administrador nunca fica no frontend.
+         */
+        let result;
+
+        try {
+          result = await api(
+            'admin/login',
+            'POST',
+            {
+              username: email,
+              password: password
+            }
+          );
+        } catch (adminError) {
+          result = await api(
+            'login',
+            'POST',
+            {
+              email: email,
+              password: password,
+              remember: remember
+            }
+          );
+        }
+
+        saveSession(
+          result,
+          remember
+        );
+
+        message(
+          result.role === 'admin'
+            ? 'Acesso administrativo realizado com sucesso.'
+            : 'Login realizado com sucesso.'
+        );
+
+        await loadUser();
+      } catch (error) {
+        fail(error);
+      }
+    }
+  );
+}
+
+function setupRegister() {
+  const form =
+    el('registerForm');
+
+  if (!form) {
+    return;
+  }
+
+  form.addEventListener(
+    'submit',
+    async function (event) {
+      event.preventDefault();
+
+      const name =
+        el('rname')
+          .value
+          .trim();
+
+      const email =
+        el('remail')
+          .value
+          .trim();
+
+      const password =
+        el('rpassword')
+          .value;
+
+      try {
+        if (
+          !name ||
+          !email ||
+          !password
+        ) {
+          throw new Error(
+            'Preencha todos os campos.'
+          );
+        }
+
+        if (
+          password.length < 8
+        ) {
+          throw new Error(
+            'A senha precisa ter pelo menos 8 caracteres.'
+          );
+        }
+
+        const result =
+          await api(
+            'users/register',
+            'POST',
+            {
+              name: name,
+              email: email,
+              password: password
+            }
+          );
+
+        el('email').value =
+          email;
+
+        form.reset();
+
+        show('login');
+
+        message(
+          result.message ||
+            'Conta criada com sucesso. Agora faça login.'
+        );
+      } catch (error) {
+        fail(error);
+      }
+    }
+  );
+}
+
+function setupForgot() {
+  const form =
+    el('forgotForm');
+
+  if (!form) {
+    return;
+  }
+
+  form.addEventListener(
+    'submit',
+    async function (event) {
+      event.preventDefault();
+
+      const email =
+        el('femail')
+          .value
+          .trim();
+
+      try {
+        if (!email) {
+          throw new Error(
+            'Informe seu e-mail.'
+          );
+        }
+
+        /*
+         * CORRIGIDO:
+         * server.js usa /api/forgot-password
+         */
+        const result =
+          await api(
+            'forgot-password',
+            'POST',
+            {
+              email: email
+            }
+          );
+
+        form.reset();
+
+        show('login');
+
+        message(
+          result.message ||
+            'Solicitação enviada.'
+        );
+      } catch (error) {
+        fail(error);
+      }
+    }
+  );
+}
+
+async function setupReset() {
+  const form =
+    el('resetForm');
+
+  if (!form) {
+    return;
+  }
+
+  const params =
+    new URLSearchParams(
+      window.location.search
+    );
+
+  const resetToken =
+    params.get('reset');
+
+  if (!resetToken) {
+    return;
+  }
+
+  show('reset');
+
+  form.addEventListener(
+    'submit',
+    async function (event) {
+      event.preventDefault();
+
+      const password =
+        el('newpassword')
+          .value;
+
+      try {
+        if (
+          password.length < 8
+        ) {
+          throw new Error(
+            'A nova senha precisa ter pelo menos 8 caracteres.'
+          );
+        }
+
+        /*
+         * CORRIGIDO:
+         * server.js usa /api/reset-password
+         */
+        const result =
+          await api(
+            'reset-password',
+            'POST',
+            {
+              token: resetToken,
+              password: password
+            }
+          );
+
+        form.reset();
+
+        window.history.replaceState(
+          {},
+          document.title,
+          window.location.pathname
+        );
+
+        show('login');
+
+        message(
+          result.message ||
+            'Senha alterada com sucesso. Faça login.'
+        );
+      } catch (error) {
+        fail(error);
+      }
+    }
+  );
+}
+
+function setupPlayer() {
+  const button =
+    el('playerStart');
+
+  if (button) {
+    button.addEventListener(
+      'click',
+      startPlayerStream
+    );
+  }
+}
+
+function setupAdmin() {
+  const start =
+    el('startStream');
+
+  const stop =
+    el('stopStream');
+
+  const toggle =
+    el('toggleStream');
+
+  const refreshStream =
+    el('refreshStream');
+
+  const refreshAdmin =
+    el('refreshAdmin');
+
+  const timeForm =
+    el('timeForm');
+
+  if (start) {
+    start.addEventListener(
+      'click',
+      startAdminStream
+    );
+  }
+
+  if (stop) {
+    stop.addEventListener(
+      'click',
+      stopAdminStream
+    );
+  }
+
+  if (toggle) {
+    toggle.addEventListener(
+      'click',
+      toggleAdminStream
+    );
+  }
+
+  if (refreshStream) {
+    refreshStream.addEventListener(
+      'click',
+      async function () {
+        try {
+          await loadStreamStatus();
+
+          message(
+            'Status do GameCloud atualizado.'
+          );
+        } catch (error) {
+          fail(error);
+        }
+      }
+    );
+  }
+
+  if (refreshAdmin) {
+    refreshAdmin.addEventListener(
+      'click',
+      async function () {
+        try {
+          await loadAdmin();
+
+          await loadStreamStatus();
+
+          message(
+            'Painel atualizado.'
+          );
+        } catch (error) {
+          fail(error);
+        }
+      }
+    );
+  }
+
+  if (timeForm) {
+    timeForm.addEventListener(
+      'submit',
+      async function (event) {
+        event.preventDefault();
+
+        const email =
+          el('playerEmail')
+            .value
+            .trim();
+
+        const minutes =
+          Number(
+            el('addMinutes')
+              .value
+          );
+
+        try {
+          if (!email) {
+            throw new Error(
+              'Informe o e-mail do jogador.'
+            );
+          }
+
+          if (
+            !Number.isSafeInteger(
+              minutes
+            ) ||
+            minutes < 1 ||
+            minutes > 100000
+          ) {
+            throw new Error(
+              'Informe de 1 a 100000 minutos.'
+            );
+          }
+
+          const result =
+            await api(
+              'admin/time/add',
+              'POST',
+              {
+                email: email,
+                minutes: minutes
+              }
+            );
+
+          timeForm.reset();
+
+          await loadAdmin();
+
+          /*
+           * CORRIGIDO:
+           * server.js retorna o usuário dentro
+           * de result.user, e não result.minutes.
+           */
+          const updatedMinutes =
+            result.user &&
+            result.user.minutes !== undefined
+              ? result.user.minutes
+              : null;
+
+          message(
+            updatedMinutes !== null
+              ? 'Tempo atualizado. O jogador agora possui ' +
+                formatMinutes(
+                  updatedMinutes
+                ) +
+                '.'
+              : (
+                result.message ||
+                'Tempo do jogador atualizado com sucesso.'
+              )
+          );
+        } catch (error) {
+          fail(error);
+        }
+      }
+    );
+  }
+}
+
+async function init() {
+  setupNavigation();
+
+  setupLogin();
+
+  setupRegister();
+
+  setupForgot();
+
+  setupPlayer();
+
+  setupAdmin();
+
+  document
+    .querySelectorAll('.logout')
+    .forEach(
+      function (button) {
+        button.addEventListener(
+          'click',
+          logout
+        );
+      }
+    );
+
+  const refresh =
+    el('refresh');
+
+  if (refresh) {
+    refresh.addEventListener(
+      'click',
+      async function () {
+        try {
+          await loadUser();
+
+          message(
+            'Dados atualizados.'
+          );
+        } catch (error) {
+          fail(error);
+        }
+      }
+    );
+  }
+
+  await setupReset();
+
+  const resetToken =
+    new URLSearchParams(
+      window.location.search
+    ).get('reset');
+
+  if (token) {
+    try {
+      await loadUser();
+    } catch (error) {
+      clearSession();
+
+      show('login');
+
+      message(
+        'Sua sessão expirou. Entre novamente.',
+        true
+      );
+    }
+  } else if (!resetToken) {
+    show('login');
+  }
+}
+
+document.addEventListener(
+  'DOMContentLoaded',
+  function () {
+    init().catch(fail);
+  }
+);
