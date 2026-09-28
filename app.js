@@ -322,19 +322,24 @@ async function loadStreamStatus() {
 }
 
 async function loadPlayerStreamStatus() {
+
   const result =
     await api('stream/status');
+
+  const streaming =
+    result.streaming ||
+    result;
 
   setText(
     'playerStreamStatus',
     streamStatusText(
-      result.status
+      streaming.status
     )
   );
 
   setText(
     'playerStreamMessage',
-    result.message ||
+    streaming.message ||
       'Aguardando o computador GameCloud.'
   );
 }
