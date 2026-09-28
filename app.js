@@ -290,7 +290,12 @@ async function loadSupport() {
 function wireActions() {
   document.addEventListener('click', async (event) => {
     const pageButton = event.target.closest('[data-page]');
-    if (pageButton) { showUserPage(pageButton.dataset.page); return; }
+    if (pageButton) {
+      const targetPage = pageButton.dataset.page;
+      if (['login', 'register', 'forgot', 'reset', 'adminLogin', 'admin'].includes(targetPage)) show(targetPage);
+      else showUserPage(targetPage);
+      return;
+    }
     const button = event.target.closest('button'); if (!button) return;
     try {
       if (button.id === 'showRegister') { show('register'); return; }
