@@ -246,60 +246,78 @@ function setButtonBusy(
 }
 
 async function loadStreamStatus() {
-  const result =
-    await api('stream/status');
 
-  setText(
-    'streamStatus',
-    streamStatusText(
-      result.status
-    )
-  );
+  try {
 
-  setText(
-    'streamGame',
-    'Jogo: ' +
-      (
-        result.game ||
-        'FiveM'
+    const result =
+      await api('stream/status');
+
+    const streaming =
+      result.streaming ||
+      result;
+
+    setText(
+      'streamStatus',
+      streamStatusText(
+        streaming.status
       )
-  );
+    );
 
-  setText(
-    'streamHost',
-    'Computador: ' +
-      (
-        result.host ||
-        '—'
-      )
-  );
-
-  setText(
-    'streamMessage',
-    result.message ||
-      '—'
-  );
-
-  setText(
-    'streamHeartbeat',
-    result.lastHeartbeat
-      ? 'Último contato: ' +
-        new Date(
-          result.lastHeartbeat
-        ).toLocaleString(
-          'pt-BR'
+    setText(
+      'streamGame',
+      'Jogo: ' +
+        (
+          streaming.game ||
+          'FiveM'
         )
-      : 'Último contato: —'
-  );
+    );
 
-  const toggle =
-    el('toggleStream');
+    setText(
+      'streamHost',
+      'Computador: ' +
+        (
+          streaming.host ||
+          '—'
+        )
+    );
 
-  if (toggle) {
-    toggle.textContent =
-      result.enabled
-        ? '🔄 Desativar streaming'
-        : '🔄 Ativar streaming';
+    setText(
+      'streamMessage',
+      streaming.message ||
+        '—'
+    );
+
+    setText(
+      'streamHeartbeat',
+      streaming.lastHeartbeat
+        ? 'Último contato: ' +
+          new Date(
+            streaming.lastHeartbeat
+          ).toLocaleString(
+            'pt-BR'
+          )
+        : 'Último contato: —'
+    );
+
+    const toggle =
+      el('toggleStream');
+
+    if (toggle) {
+
+      toggle.textContent =
+        streaming.enabled
+          ? '🔄 Desativar streaming'
+          : '🔄 Ativar streaming';
+    }
+
+  } catch (error) {
+
+    console.error(
+      '[GameCloud] Erro ao atualizar status:',
+      error
+    );
+
+    fail(error);
   }
 }
 
