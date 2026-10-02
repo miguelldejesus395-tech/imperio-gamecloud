@@ -426,6 +426,112 @@ async function loadAdmin() {
           'td'
         );
 
+      const actions =
+        document.createElement(
+          'td'
+        );
+
+      const giveButton =
+        document.createElement(
+          'button'
+        );
+
+      giveButton.type = 'button';
+      giveButton.className = 'give-minutes';
+      giveButton.textContent = '🎁 Dar minutos';
+      giveButton.title = 'Adicionar minutos para este jogador';
+
+      giveButton.addEventListener(
+        'click',
+        async function () {
+          const currentMinutes =
+            Number(player.minutes || 0);
+
+          const input =
+            window.prompt(
+              'Quantos minutos deseja adicionar para ' +
+                (player.name || player.email || 'este jogador') +
+                '?',
+              '60'
+            );
+
+          if (input === null) {
+            return;
+          }
+
+          const minutes =
+            Number(String(input).trim());
+
+          if (
+            !Number.isSafeInteger(minutes) ||
+            minutes < 1 ||
+            minutes > 100000
+          ) {
+            message(
+              'Informe uma quantidade entre 1 e 100000 minutos.',
+              true
+            );
+            return;
+          }
+
+          const confirmed =
+            window.confirm(
+              'Adicionar ' +
+                minutes +
+                ' minutos para ' +
+                (player.name || player.email || 'este jogador') +
+                '?\n\nSaldo atual: ' +
+                currentMinutes +
+                ' minutos'
+            );
+
+          if (!confirmed) {
+            return;
+          }
+
+          try {
+            giveButton.disabled = true;
+            giveButton.textContent = '⏳ Adicionando...';
+
+            const result =
+              await api(
+                'admin/time/add',
+                'POST',
+                {
+                  email: player.email,
+                  minutes: minutes
+                }
+              );
+
+            await loadAdmin();
+
+            const updated =
+              result.user &&
+              result.user.minutes !== undefined
+                ? result.user.minutes
+                : currentMinutes + minutes;
+
+            message(
+              '✅ ' +
+                minutes +
+                ' minutos adicionados. ' +
+                (player.name || player.email) +
+                ' agora possui ' +
+                formatMinutes(updated) +
+                '.'
+            );
+          } catch (error) {
+            fail(error);
+          } finally {
+            giveButton.disabled = false;
+            giveButton.textContent = '🎁 Dar minutos';
+          }
+        }
+      );
+
+      actions.className = 'user-actions';
+      actions.appendChild(giveButton);
+
       name.textContent =
         player.name ||
         'Jogador';
@@ -468,6 +574,10 @@ async function loadAdmin() {
 
       row.appendChild(
         status
+      );
+
+      row.appendChild(
+        actions
       );
 
       tbody.appendChild(
